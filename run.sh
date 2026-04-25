@@ -1,16 +1,20 @@
 #!/usr/bin/bash
 
+reqver=20
 nodever=`node -v`
 major_version=$(echo "${nodever}" | cut -d'.' -f1 | tr -d 'v')
 
-if [ "$major_version" -ge 20 ]; then
+if [ "$major_version" -ge ${reqver} ]; then
     echo "Node version check passed."
 else
-    echo "Node version check failed. Please install a version >= 20. If you haven't installed npm yet:"
+    echo "Node version check failed. Please install a version >= ${reqver}. If you haven't installed npm yet:"
     echo "  sudo apt install npm"
     echo "If you have an older version of node.js installed already:"
-    echo "  sudo npm install 20"
-    echo "  sudo npm use 20"
+    echo "  # make sure nvm is installed and available:"
+    echo "  curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash"
+    echo "  . ~/.bashrc"
+    echo "  # install node ${reqver} and activate it"
+    echo "  sudo nvm install ${reqver}"
     exit 1
 fi
 
