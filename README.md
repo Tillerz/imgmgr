@@ -149,6 +149,7 @@ Set `"watchForChanges": true` in `config.json` and restart the server. imgmgr wa
 ├── 2026-03-30/
 ├── 2026-04-23/
 ├── 2026-04-25/
+```
 
 Create a folder each day with the full timestamp, like 2026-04-25.
 If you use a software like [SDNext](https://github.com/vladmandic/sdnext) to create images, you can establish this automatically with these settings:
