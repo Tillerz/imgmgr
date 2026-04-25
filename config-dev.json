@@ -1,0 +1,11 @@
+{
+  "port": 3000,
+  "imageRoot": "/mnt/sd/imgmgr",
+  "thumbnailSize": 220,
+  "thumbnailQuality": 82,
+  "cacheDir": ".cache",
+  "supportedExtensions": ["png", "webp"],
+  "scanOnStart": true,
+  "watchInterval": 5000,
+  "watchForChanges": false
+}
