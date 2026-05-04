@@ -14,6 +14,7 @@ export default function App() {
   const [sort, setSort] = useState('mtime-desc');
   const [favoriteMin, setFavoriteMin] = useState(0);
   const [search, setSearch] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [viewerId, setViewerId] = useState(null);
   const [showDuplicates, setShowDuplicates] = useState(false);
@@ -35,7 +36,7 @@ export default function App() {
   const [offset, setOffset] = useState(0);
   const PAGE = 100;
 
-  const queryKey = ['images', currentFolder, sort, favoriteMin, search];
+  const queryKey = ['images', currentFolder, sort, favoriteMin, search, tagFilter];
 
   // Refetch when filters change — reset accumulated images
   const fetchPage = useCallback(async (off = 0) => {
@@ -44,6 +45,7 @@ export default function App() {
       sort,
       favorite_min: favoriteMin,
       search,
+      tag: tagFilter,
       limit: PAGE,
       offset: off,
     });
@@ -54,7 +56,7 @@ export default function App() {
     }
     setTotal(data.total);
     setOffset(off + data.images.length);
-  }, [currentFolder, sort, favoriteMin, search]);
+  }, [currentFolder, sort, favoriteMin, search, tagFilter]);
 
   // Initial load and on filter change
   React.useEffect(() => {
@@ -107,6 +109,16 @@ export default function App() {
     setImages(prev => prev.filter(img => !ids.includes(img.id)));
     setSelectedIds(new Set());
   }, []);
+
+  const handleBulkTag = useCallback(async (tag, action) => {
+    if (!tag.trim()) return;
+    if (action === 'add') {
+      await api.bulkAddTag([...selectedIds], tag);
+    } else {
+      await api.bulkRemoveTag([...selectedIds], tag);
+    }
+    qc.invalidateQueries({ queryKey: ['allTags'] });
+  }, [selectedIds, qc]);
 
   const handleScan = useCallback(async () => {
     setScanning(true);
@@ -167,15 +179,25 @@ export default function App() {
               sort={sort} onSort={setSort}
               favoriteMin={favoriteMin} onFavoriteMin={setFavoriteMin}
               search={search} onSearch={setSearch}
+              tagFilter={tagFilter} onTagFilter={setTagFilter}
               selectedCount={selectedIds.size}
               total={total}
               loaded={images.length}
-              onSelectAll={() => setSelectedIds(new Set(images.map(i => i.id)))}
+              onSelectAll={async () => {
+                const ids = await api.imageIds({
+                  folder: currentFolder,
+                  favorite_min: favoriteMin,
+                  search,
+                  tag: tagFilter,
+                });
+                setSelectedIds(new Set(ids));
+              }}
               onDeselectAll={() => setSelectedIds(new Set())}
               onMoveSelected={() => {/* prompt handled in toolbar */}}
               onDeleteSelected={() => handleDelete([...selectedIds])}
               currentFolder={currentFolder}
               onMoveToFolder={(folder) => handleMove([...selectedIds], folder)}
+              onBulkTag={handleBulkTag}
               hasNewImages={hasNewImages}
               onRefreshNew={() => { setHasNewImages(false); fetchPage(0); }}
             />

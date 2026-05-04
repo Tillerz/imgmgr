@@ -46,12 +46,21 @@ db.exec(`
     FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS tags (
+    image_id INTEGER NOT NULL,
+    tag      TEXT NOT NULL,
+    PRIMARY KEY (image_id, tag),
+    FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_images_folder   ON images(folder_path);
   CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite);
   CREATE INDEX IF NOT EXISTS idx_images_mtime    ON images(mtime);
   CREATE INDEX IF NOT EXISTS idx_images_hash     ON images(file_hash);
   CREATE INDEX IF NOT EXISTS idx_meta_image      ON metadata(image_id);
   CREATE INDEX IF NOT EXISTS idx_meta_key        ON metadata(key);
+  CREATE INDEX IF NOT EXISTS idx_tags_image      ON tags(image_id);
+  CREATE INDEX IF NOT EXISTS idx_tags_tag        ON tags(tag);
 `);
 
 export default db;

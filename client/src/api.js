@@ -5,6 +5,7 @@ async function json(res) {
 
 export const api = {
   images: (params) => fetch('/api/images?' + new URLSearchParams(params)).then(json),
+  imageIds: (params) => fetch('/api/images/ids?' + new URLSearchParams(params)).then(json),
   image:  (id) => fetch(`/api/images/${id}`).then(json),
   metadata: (id) => fetch(`/api/images/${id}/metadata`).then(json),
   setFavorite: (id, level) => fetch(`/api/images/${id}`, {
@@ -35,4 +36,21 @@ export const api = {
   scanStatus: () => fetch('/api/scan/status').then(json),
   metaKeys: () => fetch('/api/images/meta/keys').then(json),
   favoriteCounts: (params) => fetch('/api/images/counts?' + new URLSearchParams(params)).then(json),
+  imageTags: (id) => fetch(`/api/images/${id}/tags`).then(json),
+  addTag: (id, tag) => fetch(`/api/images/${id}/tags`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tag }),
+  }).then(json),
+  removeTag: (id, tag) => fetch(`/api/images/${id}/tags/${encodeURIComponent(tag)}`, {
+    method: 'DELETE',
+  }).then(json),
+  allTags: () => fetch('/api/tags').then(json),
+  bulkAddTag: (ids, tag) => fetch('/api/tags/bulk', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, tag }),
+  }).then(json),
+  bulkRemoveTag: (ids, tag) => fetch('/api/tags/bulk', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, tag }),
+  }).then(json),
 };

@@ -1,7 +1,60 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api.js';
 import StarRating from './StarRating.jsx';
+
+function TagEditor({ imageId }) {
+  const qc = useQueryClient();
+  const { data: tags = [] } = useQuery({
+    queryKey: ['tags', imageId],
+    queryFn: () => api.imageTags(imageId),
+  });
+  const [input, setInput] = useState('');
+
+  async function add() {
+    const t = input.trim();
+    if (!t) return;
+    await api.addTag(imageId, t);
+    setInput('');
+    qc.invalidateQueries({ queryKey: ['tags', imageId] });
+    qc.invalidateQueries({ queryKey: ['allTags'] });
+  }
+
+  async function remove(tag) {
+    await api.removeTag(imageId, tag);
+    qc.invalidateQueries({ queryKey: ['tags', imageId] });
+    qc.invalidateQueries({ queryKey: ['allTags'] });
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Enter') { e.preventDefault(); add(); }
+  }
+
+  return (
+    <div className="meta-section">
+      <div className="meta-section-title">Tags</div>
+      <div className="tag-list">
+        {tags.map(tag => (
+          <span key={tag} className="tag-chip">
+            {tag}
+            <button className="tag-chip-remove" onClick={() => remove(tag)} title="Remove tag">×</button>
+          </span>
+        ))}
+      </div>
+      <div className="tag-input-row">
+        <input
+          className="tag-input"
+          type="text"
+          placeholder="Add tag…"
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={onKeyDown}
+        />
+        <button className="btn btn-secondary btn-xs" onClick={add}>Add</button>
+      </div>
+    </div>
+  );
+}
 
 function MetaPanel({ imageId, image }) {
   const { data: metaRows = [] } = useQuery({
@@ -56,6 +109,8 @@ function MetaPanel({ imageId, image }) {
           <pre className="meta-prompt meta-negative">{image.negative_prompt}</pre>
         </div>
       )}
+
+      <TagEditor imageId={imageId} />
 
       {metaRows.length > 0 && (
         <div className="meta-section">

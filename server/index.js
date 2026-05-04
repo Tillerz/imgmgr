@@ -10,6 +10,7 @@ import { startWatcher } from './watcher.js';
 import imageRoutes from './routes/images.js';
 import folderRoutes from './routes/folders.js';
 import duplicateRoutes from './routes/duplicates.js';
+import tagRoutes from './routes/tags.js';
 import { ensureThumbnail } from './thumbnails.js';
 import { addClient, broadcast } from './events.js';
 
@@ -42,6 +43,7 @@ app.get('/api/full/:id', (req, res) => {
 app.use('/api/images', imageRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api/duplicates', duplicateRoutes);
+app.use('/api/tags', tagRoutes);
 
 // Scan endpoint
 app.post('/api/scan', async (req, res) => {

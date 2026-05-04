@@ -29,6 +29,27 @@ router.get('/counts', (req, res) => {
   res.json(counts);
 });
 
+// All IDs matching current filters — used by select-all to cover unloaded pages
+router.get('/ids', (req, res) => {
+  const { folder = '', favorite_min = 0, search = '', tag = '' } = req.query;
+  const params = [];
+  const conditions = [];
+  const joins = [];
+
+  if (folder) { conditions.push('i.folder_path = ?'); params.push(folder); }
+  if (Number(favorite_min) > 0) { conditions.push('i.favorite >= ?'); params.push(Number(favorite_min)); }
+  if (search) {
+    conditions.push('(i.filename LIKE ? OR i.positive_prompt LIKE ?)');
+    params.push(`%${search}%`, `%${search}%`);
+  }
+  if (tag) { joins.push('JOIN tags tg ON tg.image_id = i.id'); conditions.push('tg.tag = ?'); params.push(tag); }
+
+  const join = joins.join(' ');
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const rows = db.prepare(`SELECT DISTINCT i.id FROM images i ${join} ${where} ORDER BY i.mtime DESC`).all(...params);
+  res.json(rows.map(r => r.id));
+});
+
 // List unique metadata keys — must be before /:id
 router.get('/meta/keys', (req, res) => {
   const rows = db.prepare('SELECT DISTINCT key FROM metadata ORDER BY key').all();
@@ -44,12 +65,14 @@ router.get('/', (req, res) => {
     search = '',
     meta_key = '',
     meta_value = '',
+    tag = '',
     limit = 100,
     offset = 0,
   } = req.query;
 
   const params = [];
   const conditions = [];
+  const joins = [];
 
   if (folder) {
     conditions.push('i.folder_path = ?');
@@ -63,13 +86,18 @@ router.get('/', (req, res) => {
     conditions.push('(i.filename LIKE ? OR i.positive_prompt LIKE ?)');
     params.push(`%${search}%`, `%${search}%`);
   }
-
-  let join = '';
   if (meta_key && meta_value) {
-    join = 'JOIN metadata m ON m.image_id = i.id';
+    joins.push('JOIN metadata m ON m.image_id = i.id');
     conditions.push('m.key = ? AND m.value LIKE ?');
     params.push(meta_key, `%${meta_value}%`);
   }
+  if (tag) {
+    joins.push('JOIN tags tg ON tg.image_id = i.id');
+    conditions.push('tg.tag = ?');
+    params.push(tag);
+  }
+
+  const join = joins.join(' ');
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -103,6 +131,25 @@ router.get('/:id', (req, res) => {
   const img = db.prepare('SELECT * FROM images WHERE id = ?').get(req.params.id);
   if (!img) return res.status(404).json({ error: 'not found' });
   res.json(img);
+});
+
+// Tags for an image
+router.get('/:id/tags', (req, res) => {
+  const rows = db.prepare('SELECT tag FROM tags WHERE image_id = ? ORDER BY tag').all(req.params.id);
+  res.json(rows.map(r => r.tag));
+});
+
+router.post('/:id/tags', (req, res) => {
+  const { tag } = req.body;
+  if (!tag || typeof tag !== 'string' || !tag.trim()) return res.status(400).json({ error: 'tag required' });
+  const clean = tag.trim().toLowerCase();
+  db.prepare('INSERT OR IGNORE INTO tags (image_id, tag) VALUES (?, ?)').run(req.params.id, clean);
+  res.json({ ok: true });
+});
+
+router.delete('/:id/tags/:tag', (req, res) => {
+  db.prepare('DELETE FROM tags WHERE image_id = ? AND tag = ?').run(req.params.id, req.params.tag);
+  res.json({ ok: true });
 });
 
 // Get all metadata for an image

@@ -15,15 +15,19 @@ export default function Toolbar({
   sort, onSort,
   favoriteMin, onFavoriteMin,
   search, onSearch,
+  tagFilter, onTagFilter,
   selectedCount, total, loaded,
   onSelectAll, onDeselectAll,
   onDeleteSelected,
   currentFolder,
   onMoveToFolder,
+  onBulkTag,
   hasNewImages,
   onRefreshNew,
 }) {
   const [showMoveMenu, setShowMoveMenu] = useState(false);
+  const [showTagMenu, setShowTagMenu] = useState(false);
+  const [tagInput, setTagInput] = useState('');
 
   const { data: folders = [] } = useQuery({
     queryKey: ['folders'],
@@ -35,6 +39,12 @@ export default function Toolbar({
     queryKey: ['favCounts', currentFolder, search],
     queryFn: () => api.favoriteCounts({ folder: currentFolder, search }),
     staleTime: 10_000,
+  });
+
+  const { data: allTags = [] } = useQuery({
+    queryKey: ['allTags'],
+    queryFn: api.allTags,
+    staleTime: 30_000,
   });
 
   const totalCount = Object.values(counts).reduce((a, b) => a + b, 0);
@@ -54,6 +64,18 @@ export default function Toolbar({
         <select className="select-sm" value={sort} onChange={e => onSort(e.target.value)}>
           {SORTS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
+
+        {allTags.length > 0 && (
+          <select
+            className="select-sm"
+            value={tagFilter}
+            onChange={e => onTagFilter(e.target.value)}
+            title="Filter by tag"
+          >
+            <option value="">All tags</option>
+            {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
 
         <div className="star-filter">
           <span className="filter-label">Min ★</span>
@@ -111,6 +133,56 @@ export default function Toolbar({
                       <span className="move-menu-path">{f.path}</span>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+
+            <div className="move-menu-wrap">
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowTagMenu(v => !v)}>
+                Tag {selectedCount} →
+              </button>
+              {showTagMenu && (
+                <div className="move-menu tag-bulk-menu">
+                  <div className="tag-bulk-input-row">
+                    <input
+                      className="tag-input"
+                      type="text"
+                      placeholder="Tag name…"
+                      value={tagInput}
+                      onChange={e => setTagInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') { onBulkTag(tagInput, 'add'); setTagInput(''); } }}
+                      autoFocus
+                    />
+                  </div>
+                  <div className="tag-bulk-actions">
+                    <button
+                      className="btn btn-primary btn-xs"
+                      disabled={!tagInput.trim()}
+                      onClick={() => { onBulkTag(tagInput, 'add'); setTagInput(''); }}
+                    >
+                      + Add to {selectedCount}
+                    </button>
+                    <button
+                      className="btn btn-secondary btn-xs"
+                      disabled={!tagInput.trim()}
+                      onClick={() => { onBulkTag(tagInput, 'remove'); setTagInput(''); }}
+                    >
+                      − Remove from {selectedCount}
+                    </button>
+                  </div>
+                  {allTags.length > 0 && (
+                    <div className="tag-bulk-existing">
+                      {allTags.map(t => (
+                        <span
+                          key={t}
+                          className={`tag-chip tag-chip-pick ${tagInput === t ? 'active' : ''}`}
+                          onClick={() => setTagInput(t)}
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
