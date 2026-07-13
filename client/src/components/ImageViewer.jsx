@@ -116,12 +116,18 @@ function MetaPanel({ imageId, image }) {
         <div className="meta-section">
           <div className="meta-section-title">EXIF / Metadata</div>
           <div className="meta-table">
-            {metaRows.map(row => (
-              <div key={row.key} className="meta-row">
-                <span className="meta-key">{row.key}</span>
-                <span className="meta-value">{row.value}</span>
-              </div>
-            ))}
+            {metaRows.map(row => {
+              const isComment = row.key === 'UserComment';
+              const value = isComment
+                ? String(row.value).replace(/(Negative prompt:|Negative template:|Template:|Steps:)/g, '\n$1')
+                : row.value;
+              return (
+                <div key={row.key} className="meta-row">
+                  <span className="meta-key">{row.key}</span>
+                  <span className={`meta-value ${isComment ? 'meta-value-pre' : ''}`}>{value}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -158,10 +164,15 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowLeft') nav(-1);
       if (e.key === 'ArrowRight') nav(1);
+      const tag = e.target.tagName;
+      const typing = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
+      if (!typing && e.key >= '0' && e.key <= '5' && image) {
+        onFavoriteChange(image.id, Number(e.key));
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, nav]);
+  }, [onClose, nav, image, onFavoriteChange]);
 
   // Prevent body scroll while viewer is open
   useEffect(() => {
