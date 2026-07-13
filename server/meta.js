@@ -105,32 +105,43 @@ export function parseSDParameters(raw) {
   return { positive, negative };
 }
 
+// Parse an EXIF/TIFF buffer with exif-reader and populate result.raw plus the
+// SD prompts carried in UserComment. Shared by the WebP and JPEG paths.
+function applyExifBuffer(exifBuf, result) {
+  const parsed = exifReader(exifBuf);
+  result.raw = flattenExifReader(parsed);
+  const uc = parsed.Photo?.UserComment;
+  if (uc) {
+    const text = decodeUserComment(uc, parsed.bigEndian);
+    if (text) {
+      result.raw['UserComment'] = text;
+      const { positive, negative } = parseSDParameters(text);
+      result.positive_prompt = positive;
+      result.negative_prompt = negative;
+    }
+  }
+}
+
 export async function extractMetadata(filePath) {
   const result = { positive_prompt: '', negative_prompt: '', raw: {} };
   try {
     const isWebP = /\.webp$/i.test(filePath);
     const isPNG  = /\.png$/i.test(filePath);
+    const isJPEG = /\.jpe?g$/i.test(filePath);
     const buf = await readFile(filePath);
 
     if (isWebP) {
       // exifr doesn't support this WebP variant; parse the RIFF container directly
       const chunks = extractWebPChunks(buf);
       if (chunks['EXIF']) {
-        try {
-          const parsed = exifReader(chunks['EXIF']);
-          result.raw = flattenExifReader(parsed);
-          // SD prompts live in UserComment
-          const uc = parsed.Photo?.UserComment;
-          if (uc) {
-            const text = decodeUserComment(uc, parsed.bigEndian);
-            if (text) {
-              result.raw['UserComment'] = text;
-              const { positive, negative } = parseSDParameters(text);
-              result.positive_prompt = positive;
-              result.negative_prompt = negative;
-            }
-          }
-        } catch {}
+        try { applyExifBuffer(chunks['EXIF'], result); } catch {}
+      }
+    } else if (isJPEG) {
+      // SD tools write parameters into the EXIF UserComment (same as WebP).
+      // Locate the APP1 "Exif\0\0" header and hand the TIFF block to exif-reader.
+      const marker = buf.indexOf(Buffer.from('Exif\0\0', 'latin1'));
+      if (marker !== -1) {
+        try { applyExifBuffer(buf.slice(marker + 6), result); } catch {}
       }
     } else {
       // PNG: use exifr + manual tEXt chunk reading

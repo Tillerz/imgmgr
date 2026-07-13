@@ -11,7 +11,7 @@ const defaults = {
   thumbnailSize: 220,
   thumbnailQuality: 82,
   cacheDir: '.cache',
-  supportedExtensions: ['png', 'webp'],
+  supportedExtensions: ['png', 'webp', 'jpg', 'jpeg'],
   scanOnStart: true,
   watchForChanges: false,
 };

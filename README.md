@@ -1,4 +1,4 @@
-# imgmgr
+# ImgMgr
 
 A browser-based image manager built for large collections of AI-generated images (Stable Diffusion and compatible tools). Runs as a local Node.js server with a React frontend.
 
@@ -14,19 +14,19 @@ A browser-based image manager built for large collections of AI-generated images
 - **Full-size lightbox** with EXIF/metadata sidebar (copy-paste friendly)
 - **Folder tree** — collapsible, with drag-and-drop move support
 - **Star ratings** (0–5) with per-level counts in the filter bar
-- **Multi-select** — select tiles, then move to a folder or delete
+- **Multi-select** — select images, then move to a folder, delete, or tag them
 - **Duplicate finder** — three modes:
   - *Exact* — identical file content (MD5 hash)
   - *Visual* — perceptually similar images (dHash, slow!)
   - *Seed* — same generation seed in the filename (might match non-similar images!)
 - **Live updates** — watches today's output folder via SSE; a banner appears when new images arrive
-- **Metadata search** — filter by filename, prompt text, or arbitrary EXIF key/value
-- Reads SD metadata from PNG `tEXt` chunks and WebP EXIF (positive prompt, negative prompt, seed, steps, etc.)
+- **Metadata search** — filter by filename, prompt text, or arbitrary EXIF key/value, with multi-term AND, exclusions (`-term`), and quoted phrases
+- Reads SD metadata from PNG `tEXt` chunks and WebP/JPEG EXIF (positive prompt, negative prompt, seed, steps, etc.)
 
 ## Requirements
 
-- **Node.js** 20+ (uses `--watch` for dev mode)
-- **npm** 9+
+- **Node.js** 22+ (uses `--watch` for dev mode)
+- **npm** 11+ (bundled with Node 22; npm 12 also supported)
 - Linux / macOS / WSL2
 
 > **WSL2 note:** If your images are on a DrvFs mount (e.g. `/mnt/d/`), the file watcher uses polling (`usePolling: true`) because inotify does not work across the Windows filesystem boundary. Set `watchInterval` in `config.json` to balance responsiveness vs CPU.
@@ -39,6 +39,8 @@ cd imgmgr
 npm install
 ```
 
+> **npm 12 note:** npm 12 blocks package install scripts by default. The native dependencies (`better-sqlite3`, `sharp`, `esbuild`) are pre-approved via the `allowScripts` field in `package.json`, so `npm install` builds them automatically. After upgrading any of those packages, re-approve with `npm install-scripts approve <pkg>`.
+
 Edit `config.json` to point at your image root:
 
 ```json
@@ -48,7 +50,7 @@ Edit `config.json` to point at your image root:
   "thumbnailSize": 220,
   "thumbnailQuality": 82,
   "cacheDir": ".cache",
-  "supportedExtensions": ["png", "webp"],
+  "supportedExtensions": ["png", "webp", "jpg", "jpeg"],
   "scanOnStart": true,
   "watchForChanges": false,
   "watchInterval": 5000
@@ -61,7 +63,7 @@ Edit `config.json` to point at your image root:
 | `thumbnailSize` | `220` | Max thumbnail dimension in pixels |
 | `thumbnailQuality` | `82` | WebP thumbnail quality (1–100) |
 | `cacheDir` | `.cache` | Directory for the SQLite DB and thumbnail cache (relative to project root) |
-| `supportedExtensions` | `["png","webp"]` | File types to index |
+| `supportedExtensions` | `["png","webp","jpg","jpeg"]` | File types to index (JPEG/`.jpg` read SD params from EXIF `UserComment`) |
 | `scanOnStart` | `true` | Run a full scan when the server starts |
 | `watchForChanges` | `false` | Enable live file watching |
 | `watchInterval` | `5000` | Polling interval in ms (used on DrvFs/WSL2 mounts) |
@@ -90,9 +92,27 @@ npm start       # serves dist/ via Express
 ### Browsing
 
 - The **folder tree** on the left lists all indexed folders. Click a folder to filter. Click the **▸** arrow to expand/collapse subfolders.
-- Use the **search bar** to filter by filename or prompt text.
+- Use the **search bar** to filter by filename or positive-prompt text (see [Search syntax](#search-syntax) below).
 - Use the **Min ★** buttons to show only images at or above a star rating. Counts are shown next to each button.
 - The **sort dropdown** supports date, name, and star rating in both directions.
+
+#### Search syntax
+
+The search bar matches against both the **filename** and the **positive prompt**. It supports multiple terms, exclusions, and phrases:
+
+| Type this | Matches images that… |
+| --- | --- |
+| `sunset beach` | contain **both** `sunset` **and** `beach` (space = AND) |
+| `sunset -beach` | contain `sunset` but **not** `beach` |
+| `"close up"` | contain the exact phrase `close up` |
+| `"close up" -blurry` | contain the phrase `close up` but not `blurry` |
+| `castle + dragon - modern` | contain `castle` **and** `dragon`, but **not** `modern` |
+
+- **Space means AND** — every included term must be present.
+- **`-` excludes** a term. It works attached (`-blurry`) or spaced (`- blurry`), and can be combined with quotes (`-"low quality"`).
+- **`+` is optional** and simply marks an included term; a plain space already implies it.
+- **Quotes** group multiple words into a single phrase. Without quotes, each word is matched independently.
+- Terms are matched literally, so wildcard characters (`%`, `_`) and hyphenated words like `close-up` are treated as-is.
 
 ### Viewing an image
 
