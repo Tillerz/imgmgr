@@ -549,17 +549,18 @@ html, body, #root {
 }
 .meta-negative { color: var(--text-secondary); }
 
-.meta-table { display: flex; flex-direction: column; gap: 2px; }
+.meta-table { display: flex; flex-direction: column; gap: 6px; }
 .meta-table .meta-row {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   font-size: 12px;
-  padding: 2px 0;
+  padding: 0 0 6px;
   border-bottom: 1px solid var(--bg-tertiary);
 }
-.meta-key { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-key { color: var(--text-muted); font-weight: 600; word-break: break-word; }
 .meta-value { color: var(--text-secondary); word-break: break-word; }
+.meta-value-pre { white-space: pre-wrap; }
 
 .meta-copy-row {
   padding: 12px 14px;
