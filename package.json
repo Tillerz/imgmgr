@@ -26,5 +26,10 @@
     "@vitejs/plugin-react": "^4.2.1",
     "concurrently": "^8.2.2",
     "vite": "^5.1.6"
+  },
+  "allowScripts": {
+    "better-sqlite3@9.6.0": true,
+    "sharp@0.33.5": true,
+    "esbuild@0.21.5": true
   }
 }
