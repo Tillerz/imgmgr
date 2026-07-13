@@ -19,10 +19,10 @@ function buildTree(folders) {
   }
 
   function sortChildren(node) {
-    node.children.sort((a, b) => a.name.localeCompare(b.name));
+    node.children.sort((a, b) => b.name.localeCompare(a.name));
     node.children.forEach(sortChildren);
   }
-  roots.sort((a, b) => a.name.localeCompare(b.name));
+  roots.sort((a, b) => b.name.localeCompare(a.name));
   roots.forEach(sortChildren);
 
   return roots;
