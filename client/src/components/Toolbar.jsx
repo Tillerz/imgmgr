@@ -56,7 +56,8 @@ export default function Toolbar({
         <input
           className="search-input"
           type="search"
-          placeholder="Search prompts & filenames…"
+          placeholder="Search… (e.g. sunset -blurry &quot;close up&quot;)"
+          title={'Space = AND, -term excludes, "quote" for phrases.\nExample: sunset beach -blurry "close up"'}
           value={search}
           onChange={e => onSearch(e.target.value)}
         />

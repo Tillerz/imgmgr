@@ -94,7 +94,8 @@ export default function App() {
   const handleFavoriteChange = useCallback(async (id, level) => {
     await api.setFavorite(id, level);
     setImages(prev => prev.map(img => img.id === id ? { ...img, favorite: level } : img));
-  }, []);
+    qc.setQueryData(['image', id], prev => prev ? { ...prev, favorite: level } : prev);
+  }, [qc]);
 
   const handleMove = useCallback(async (ids, targetFolder) => {
     await api.move(ids, targetFolder);

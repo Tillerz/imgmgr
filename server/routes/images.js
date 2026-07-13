@@ -5,6 +5,55 @@ import { join, dirname } from 'path';
 import db from '../db.js';
 
 const router = Router();
+
+// Parse a search string into include/exclude terms.
+//   space = AND (all include terms must match)
+//   -term = exclude       "quoted phrase" = literal phrase (may span spaces)
+// The '-'/'+' operator may be attached (-blurry) or spaced (- blurry / - "low
+// quality"); a spaced operator applies to the next term. It only acts as an
+// operator at a term boundary, so words like "close-up" stay intact.
+export function parseSearchTerms(search) {
+  const tokens = search.match(/[+-]?"[^"]*"|\S+/g) || [];
+  const include = [];
+  const exclude = [];
+  let pendingNeg = false; // a standalone -/+ applies to the following term
+  for (let tok of tokens) {
+    if (tok === '-') { pendingNeg = true; continue; }
+    if (tok === '+') { pendingNeg = false; continue; }
+    let neg = pendingNeg;
+    pendingNeg = false;
+    if (tok[0] === '-') { neg = true; tok = tok.slice(1); }
+    else if (tok[0] === '+') { tok = tok.slice(1); }
+    if (tok[0] === '"' && tok[tok.length - 1] === '"') tok = tok.slice(1, -1);
+    tok = tok.trim();
+    if (!tok) continue;
+    (neg ? exclude : include).push(tok);
+  }
+  return { include, exclude };
+}
+
+// Escape LIKE wildcards so underscores/percents in prompts match literally.
+const likeEscape = s => s.replace(/[\\%_]/g, c => '\\' + c);
+
+// Build a WHERE fragment matching filename/positive_prompt against the parsed
+// terms. `col` is the column prefix ('' or 'i.'). Returns { clause, params }.
+export function buildSearchClause(search, col = '') {
+  const { include, exclude } = parseSearchTerms(search);
+  const fname = `${col}filename`;
+  const prompt = `COALESCE(${col}positive_prompt, '')`;
+  const clauses = [];
+  const params = [];
+  for (const term of include) {
+    clauses.push(`(${fname} LIKE ? ESCAPE '\\' OR ${prompt} LIKE ? ESCAPE '\\')`);
+    params.push(`%${likeEscape(term)}%`, `%${likeEscape(term)}%`);
+  }
+  for (const term of exclude) {
+    clauses.push(`(${fname} NOT LIKE ? ESCAPE '\\' AND ${prompt} NOT LIKE ? ESCAPE '\\')`);
+    params.push(`%${likeEscape(term)}%`, `%${likeEscape(term)}%`);
+  }
+  return { clause: clauses.join(' AND '), params };
+}
+
 const renameP = promisify(rename);
 const mkdirP = promisify(mkdir);
 const copyP = promisify(copyFile);
@@ -17,8 +66,8 @@ router.get('/counts', (req, res) => {
   const params = [];
   if (folder) { conditions.push('folder_path = ?'); params.push(folder); }
   if (search) {
-    conditions.push('(filename LIKE ? OR positive_prompt LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
+    const s = buildSearchClause(search);
+    if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
   }
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = db.prepare(
@@ -39,8 +88,8 @@ router.get('/ids', (req, res) => {
   if (folder) { conditions.push('i.folder_path = ?'); params.push(folder); }
   if (Number(favorite_min) > 0) { conditions.push('i.favorite >= ?'); params.push(Number(favorite_min)); }
   if (search) {
-    conditions.push('(i.filename LIKE ? OR i.positive_prompt LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
+    const s = buildSearchClause(search, 'i.');
+    if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
   }
   if (tag) { joins.push('JOIN tags tg ON tg.image_id = i.id'); conditions.push('tg.tag = ?'); params.push(tag); }
 
@@ -83,8 +132,8 @@ router.get('/', (req, res) => {
     params.push(Number(favorite_min));
   }
   if (search) {
-    conditions.push('(i.filename LIKE ? OR i.positive_prompt LIKE ?)');
-    params.push(`%${search}%`, `%${search}%`);
+    const s = buildSearchClause(search, 'i.');
+    if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
   }
   if (meta_key && meta_value) {
     joins.push('JOIN metadata m ON m.image_id = i.id');
