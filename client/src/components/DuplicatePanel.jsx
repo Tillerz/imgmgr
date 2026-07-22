@@ -66,9 +66,12 @@ export default function DuplicatePanel({ onClose, onDeleted }) {
 
   async function handleDelete(ids) {
     if (!window.confirm(`Delete ${ids.length} image(s)?`)) return;
-    await api.deleteDuplicates(ids);
+    const res = await api.deleteDuplicates(ids); // starred images are protected server-side
     refetch();
     onDeleted();
+    if (res?.skipped?.length) {
+      window.alert(`${res.skipped.length} starred image(s) were protected and not deleted.`);
+    }
   }
 
   const groups = data?.groups || [];

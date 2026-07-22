@@ -38,24 +38,33 @@ export default function App() {
 
   const queryKey = ['images', currentFolder, sort, favoriteMin, search, tagFilter];
 
+  // Guards against concurrent/duplicate page loads (scroll + viewer can both ask)
+  const loadingRef = useRef(false);
+
   // Refetch when filters change — reset accumulated images
   const fetchPage = useCallback(async (off = 0) => {
-    const data = await api.images({
-      folder: currentFolder,
-      sort,
-      favorite_min: favoriteMin,
-      search,
-      tag: tagFilter,
-      limit: PAGE,
-      offset: off,
-    });
-    if (off === 0) {
-      setImages(data.images);
-    } else {
-      setImages(prev => [...prev, ...data.images]);
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    try {
+      const data = await api.images({
+        folder: currentFolder,
+        sort,
+        favorite_min: favoriteMin,
+        search,
+        tag: tagFilter,
+        limit: PAGE,
+        offset: off,
+      });
+      if (off === 0) {
+        setImages(data.images);
+      } else {
+        setImages(prev => [...prev, ...data.images]);
+      }
+      setTotal(data.total);
+      setOffset(off + data.images.length);
+    } finally {
+      loadingRef.current = false;
     }
-    setTotal(data.total);
-    setOffset(off + data.images.length);
   }, [currentFolder, sort, favoriteMin, search, tagFilter]);
 
   // Initial load and on filter change
@@ -106,10 +115,34 @@ export default function App() {
 
   const handleDelete = useCallback(async (ids) => {
     if (!window.confirm(`Delete ${ids.length} image(s)? This cannot be undone.`)) return;
-    await api.delete(ids);
-    setImages(prev => prev.filter(img => !ids.includes(img.id)));
+    const res = await api.delete(ids);
+    const skipped = new Set(res?.skipped || []); // starred images are protected
+    const deleted = ids.filter(id => !skipped.has(id));
+    setImages(prev => prev.filter(img => !deleted.includes(img.id)));
     setSelectedIds(new Set());
+    if (skipped.size) {
+      window.alert(`${skipped.size} starred image(s) were protected and not deleted.`);
+    }
   }, []);
+
+  // Delete the image open in the viewer, then advance to the next one (or the
+  // previous if it was the last; close the viewer if it was the only image).
+  // Starred images are protected: the server refuses them, so we stay put.
+  const handleViewerDelete = useCallback(async (id) => {
+    const idx = images.findIndex(img => img.id === id);
+    if (idx === -1) return;
+    const nextImg = images[idx + 1] || images[idx - 1] || null;
+    const res = await api.delete([id]);
+    if (res?.skipped?.includes(id)) return; // protected — leave the viewer as-is
+    setImages(prev => prev.filter(img => img.id !== id));
+    setSelectedIds(prev => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    setViewerId(nextImg ? nextImg.id : null);
+  }, [images]);
 
   const handleBulkTag = useCallback(async (tag, action) => {
     if (!tag.trim()) return;
@@ -222,6 +255,10 @@ export default function App() {
           onClose={() => setViewerId(null)}
           onNavigate={setViewerId}
           onFavoriteChange={handleFavoriteChange}
+          onDelete={handleViewerDelete}
+          onLoadMore={loadMore}
+          hasMore={images.length < total}
+          total={total}
         />
       )}
 

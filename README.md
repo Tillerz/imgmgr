@@ -12,8 +12,10 @@ A browser-based image manager built for large collections of AI-generated images
 
 - **Tile grid** with WebP thumbnails, infinite scroll, and lazy loading
 - **Full-size lightbox** with EXIF/metadata sidebar (copy-paste friendly)
-- **Folder tree** — collapsible, with drag-and-drop move support
-- **Star ratings** (0–5) with per-level counts in the filter bar
+- **Folder tree** — collapsible, with drag-and-drop move support, newest folders first
+- **Star ratings** (0–5) with per-level counts in the filter bar; rate from the grid, the lightbox, or the `0`–`5` keys
+- **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `Del` deletes and advances
+- **Delete protection** — starred images can't be deleted from any view
 - **Multi-select** — select images, then move to a folder, delete, or tag them
 - **Duplicate finder** — three modes:
   - *Exact* — identical file content (MD5 hash)
@@ -121,17 +123,28 @@ Click any thumbnail to open the lightbox. The right panel shows:
 - Positive and negative prompts
 - Star rating control
 
-Navigate with the **← →** arrow buttons or keyboard arrow keys.
+Navigate with the **← →** arrow buttons or keyboard arrow keys. Navigation spans the **entire current result set** — additional pages load automatically as you move past the images already fetched, so you can arrow all the way to the last (or first) image without scrolling the grid first. The counter shows your position within the full total (e.g. `198 / 79158`).
+
+#### Lightbox keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| `←` / `→` | Previous / next image (loads more as needed) |
+| `0`–`5` | Set the star rating (`0` clears it) |
+| `Del` | Delete the current image and jump to the next |
+| `Esc` | Close the lightbox |
 
 ### Rating images
 
-Click the stars in the lightbox sidebar, or hover a tile and use the star overlay directly on the grid.
+Click the stars in the lightbox sidebar, hover a tile and use the star overlay directly on the grid, or press the `0`–`5` keys while viewing an image.
 
 ### Multi-select and bulk actions
 
 - Click the **checkbox button** in the top-left corner of a tile to select it (or click again to deselect).
 - Use **All** / **None** in the toolbar to select or clear the whole page.
 - With images selected, **Move N →** opens a folder picker; **Delete N** removes them from disk and the database.
+
+> **Starred images are protected from deletion.** Any image with a rating of 1★ or higher is refused by the delete routes — in bulk delete, the lightbox `Del` shortcut, and the duplicate finder alike. You'll see a notice reporting how many were skipped; remove the stars first if you really want to delete them.
 
 ### Moving images
 

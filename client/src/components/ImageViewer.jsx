@@ -141,8 +141,9 @@ function MetaPanel({ imageId, image }) {
   );
 }
 
-export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, onFavoriteChange }) {
+export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, onFavoriteChange, onDelete, onLoadMore, hasMore, total }) {
   const [zoom, setZoom] = useState(false);
+  const [flash, setFlash] = useState('');
   const imgRef = useRef(null);
 
   const { data: image } = useQuery({
@@ -152,12 +153,28 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
 
   const currentIdx = imageIds.indexOf(imageId);
   const canPrev = currentIdx > 0;
-  const canNext = currentIdx < imageIds.length - 1;
+  const canNext = currentIdx < imageIds.length - 1 || hasMore;
 
   const nav = useCallback((dir) => {
     const next = imageIds[currentIdx + dir];
     if (next != null) { onNavigate(next); setZoom(false); }
-  }, [currentIdx, imageIds, onNavigate]);
+    // Pull the next page as we approach the end of the loaded set so navigation
+    // continues past the pagination boundary all the way to the last image.
+    if (dir > 0 && hasMore && currentIdx + dir >= imageIds.length - 5) {
+      onLoadMore?.();
+    }
+  }, [currentIdx, imageIds, onNavigate, hasMore, onLoadMore]);
+
+  // Delete request from the viewer — starred images are protected.
+  const attemptDelete = useCallback(() => {
+    if (!image) return;
+    if (image.favorite > 0) {
+      setFlash('★ Starred — protected from deletion');
+      setTimeout(() => setFlash(''), 1800);
+      return;
+    }
+    onDelete(image.id);
+  }, [image, onDelete]);
 
   useEffect(() => {
     function onKey(e) {
@@ -169,10 +186,13 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
       if (!typing && e.key >= '0' && e.key <= '5' && image) {
         onFavoriteChange(image.id, Number(e.key));
       }
+      if (!typing && e.key === 'Delete') {
+        attemptDelete();
+      }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, nav, image, onFavoriteChange]);
+  }, [onClose, nav, image, onFavoriteChange, attemptDelete]);
 
   // Prevent body scroll while viewer is open
   useEffect(() => {
@@ -183,10 +203,11 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
   return (
     <div className="viewer-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="viewer-container">
+        {flash && <div className="viewer-flash">{flash}</div>}
         <div className="viewer-topbar">
           <div className="viewer-nav">
             <button className="btn-icon" onClick={() => nav(-1)} disabled={!canPrev}>‹</button>
-            <span className="viewer-counter">{currentIdx + 1} / {imageIds.length}</span>
+            <span className="viewer-counter">{currentIdx + 1} / {total || imageIds.length}</span>
             <button className="btn-icon" onClick={() => nav(1)} disabled={!canNext}>›</button>
           </div>
           <div className="viewer-topbar-right">
