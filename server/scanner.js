@@ -1,7 +1,7 @@
 import { readdirSync, statSync, existsSync } from 'fs';
 import { join, dirname, basename, relative } from 'path';
 import db from './db.js';
-import { config } from './config.js';
+import { config, TRASH_DIR } from './config.js';
 import { extractMetadata } from './meta.js';
 import { getImageInfo, computeFileHash, computePHash, ensureThumbnail } from './thumbnails.js';
 
@@ -88,7 +88,10 @@ function collectFolders(root) {
     let entries;
     try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of entries) {
-      if (e.isDirectory()) walk(join(dir, e.name));
+      if (!e.isDirectory()) continue;
+      const full = join(dir, e.name);
+      if (full === TRASH_DIR) continue; // never index the trash folder
+      walk(full);
     }
   }
   walk(root);
@@ -100,8 +103,10 @@ function* walkFiles(dir) {
   try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
   for (const e of entries) {
     const full = join(dir, e.name);
-    if (e.isDirectory()) yield* walkFiles(full);
-    else if (EXT_RE.test(e.name)) yield full;
+    if (e.isDirectory()) {
+      if (full === TRASH_DIR) continue; // skip trashed files
+      yield* walkFiles(full);
+    } else if (EXT_RE.test(e.name)) yield full;
   }
 }
 

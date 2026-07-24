@@ -35,7 +35,9 @@ db.exec(`
     thumbnail_path TEXT,
     positive_prompt TEXT,
     negative_prompt TEXT,
-    indexed_at     INTEGER DEFAULT 0
+    indexed_at     INTEGER DEFAULT 0,
+    trashed_at     INTEGER,
+    original_path  TEXT
   );
 
   CREATE TABLE IF NOT EXISTS metadata (
@@ -62,5 +64,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tags_image      ON tags(image_id);
   CREATE INDEX IF NOT EXISTS idx_tags_tag        ON tags(tag);
 `);
+
+// Migrate existing databases created before the trash columns existed.
+const imageCols = db.prepare('PRAGMA table_info(images)').all().map(c => c.name);
+if (!imageCols.includes('trashed_at'))    db.exec('ALTER TABLE images ADD COLUMN trashed_at INTEGER');
+if (!imageCols.includes('original_path')) db.exec('ALTER TABLE images ADD COLUMN original_path TEXT');
+db.exec('CREATE INDEX IF NOT EXISTS idx_images_trashed ON images(trashed_at)');
 
 export default db;

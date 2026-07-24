@@ -3,6 +3,7 @@ import { rename, mkdir, copyFile, unlink, existsSync } from 'fs';
 import { promisify } from 'util';
 import { join, dirname } from 'path';
 import db from '../db.js';
+import { trashImages, restoreImages, purgeImages } from '../trash.js';
 
 const router = Router();
 
@@ -62,7 +63,7 @@ const unlinkP = promisify(unlink);
 // Counts per favourite level — must be before /:id
 router.get('/counts', (req, res) => {
   const { folder = '', search = '' } = req.query;
-  const conditions = [];
+  const conditions = ['trashed_at IS NULL'];
   const params = [];
   if (folder) { conditions.push('folder_path = ?'); params.push(folder); }
   if (search) {
@@ -82,7 +83,7 @@ router.get('/counts', (req, res) => {
 router.get('/ids', (req, res) => {
   const { folder = '', favorite_min = 0, search = '', tag = '' } = req.query;
   const params = [];
-  const conditions = [];
+  const conditions = ['i.trashed_at IS NULL'];
   const joins = [];
 
   if (folder) { conditions.push('i.folder_path = ?'); params.push(folder); }
@@ -115,15 +116,18 @@ router.get('/', (req, res) => {
     meta_key = '',
     meta_value = '',
     tag = '',
+    trashed = '',
     limit = 100,
     offset = 0,
   } = req.query;
 
+  const isTrash = String(trashed) === '1';
   const params = [];
   const conditions = [];
   const joins = [];
 
-  if (folder) {
+  conditions.push(isTrash ? 'i.trashed_at IS NOT NULL' : 'i.trashed_at IS NULL');
+  if (folder && !isTrash) {
     conditions.push('i.folder_path = ?');
     params.push(folder);
   }
@@ -158,7 +162,7 @@ router.get('/', (req, res) => {
     'fav-desc':   'i.favorite DESC, i.mtime DESC',
     'fav-asc':    'i.favorite ASC, i.mtime DESC',
   };
-  const orderBy = sortMap[sort] || 'i.mtime DESC';
+  const orderBy = isTrash ? 'i.trashed_at DESC' : (sortMap[sort] || 'i.mtime DESC');
 
   const countRow = db.prepare(`SELECT COUNT(DISTINCT i.id) as n FROM images i ${join} ${where}`).get(...params);
   const total = countRow?.n || 0;
@@ -166,7 +170,7 @@ router.get('/', (req, res) => {
   const images = db.prepare(`
     SELECT DISTINCT i.id, i.path, i.filename, i.folder_path, i.size, i.mtime,
            i.width, i.height, i.format, i.favorite, i.file_hash,
-           i.positive_prompt, i.negative_prompt
+           i.positive_prompt, i.negative_prompt, i.trashed_at
     FROM images i ${join} ${where}
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
@@ -256,24 +260,28 @@ router.post('/move', async (req, res) => {
   res.json({ ok: true, errors });
 });
 
-// Delete images
+// Delete images — soft delete: moves files to the trash. Starred images are
+// protected and returned in `skipped`.
 router.delete('/', async (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids required' });
-  const errors = [];
-  const skipped = []; // starred images are protected from deletion
-  for (const id of ids) {
-    const img = db.prepare('SELECT path, favorite FROM images WHERE id = ?').get(id);
-    if (!img) continue;
-    if (img.favorite > 0) { skipped.push(id); continue; }
-    try {
-      await unlinkP(img.path);
-    } catch (err) {
-      if (err.code !== 'ENOENT') { errors.push({ id, error: err.message }); continue; }
-    }
-    db.prepare('DELETE FROM images WHERE id = ?').run(id);
-  }
-  res.json({ ok: true, errors, skipped });
+  const result = await trashImages(ids);
+  res.json({ ok: true, ...result });
+});
+
+// Restore images from the trash back to their original location.
+router.post('/restore', async (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids required' });
+  const result = await restoreImages(ids);
+  res.json({ ok: true, ...result });
+});
+
+// Permanently delete from the trash. Empty body (or no ids) empties the trash.
+router.delete('/trash', async (req, res) => {
+  const { ids } = req.body || {};
+  const result = await purgeImages(ids);
+  res.json({ ok: true, ...result });
 });
 
 export default router;

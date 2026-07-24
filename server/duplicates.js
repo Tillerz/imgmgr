@@ -5,7 +5,7 @@ import { hammingDistance } from './thumbnails.js';
 export function findExactDuplicates() {
   const rows = db.prepare(`
     SELECT file_hash, COUNT(*) as cnt
-    FROM images WHERE file_hash IS NOT NULL
+    FROM images WHERE file_hash IS NOT NULL AND trashed_at IS NULL
     GROUP BY file_hash HAVING cnt > 1
   `).all();
 
@@ -13,7 +13,7 @@ export function findExactDuplicates() {
   for (const { file_hash } of rows) {
     const images = db.prepare(`
       SELECT id, path, filename, folder_path, size, mtime, width, height, favorite
-      FROM images WHERE file_hash = ? ORDER BY mtime ASC
+      FROM images WHERE file_hash = ? AND trashed_at IS NULL ORDER BY mtime ASC
     `).all(file_hash);
     groups.push({ hash: file_hash, type: 'exact', images });
   }
@@ -24,7 +24,7 @@ export function findExactDuplicates() {
 export function findPerceptualDuplicates(threshold = 8) {
   const rows = db.prepare(`
     SELECT id, path, filename, folder_path, size, mtime, width, height, favorite, phash, file_hash
-    FROM images WHERE phash IS NOT NULL
+    FROM images WHERE phash IS NOT NULL AND trashed_at IS NULL
     ORDER BY id
   `).all();
 
@@ -55,7 +55,7 @@ export function findPerceptualDuplicates(threshold = 8) {
 // Returns groups of images sharing the same seed (last number before extension in filename)
 export function findSeedDuplicates() {
   const rows = db.prepare(
-    'SELECT id, path, filename, folder_path, size, mtime, width, height, favorite FROM images ORDER BY mtime ASC'
+    'SELECT id, path, filename, folder_path, size, mtime, width, height, favorite FROM images WHERE trashed_at IS NULL ORDER BY mtime ASC'
   ).all();
 
   const SEED_RE = /-(\d+)\.[^.]+$/;

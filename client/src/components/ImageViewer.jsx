@@ -3,6 +3,26 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api.js';
 import StarRating from './StarRating.jsx';
 
+// Small button that copies `text` to the clipboard with brief "Copied!" feedback.
+function CopyButton({ text, className = '', label = 'Copy', title }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      className={className}
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text || '').then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        });
+      }}
+    >
+      {copied ? 'Copied!' : label}
+    </button>
+  );
+}
+
 function TagEditor({ imageId }) {
   const qc = useQueryClient();
   const { data: tags = [] } = useQuery({
@@ -98,7 +118,10 @@ function MetaPanel({ imageId, image }) {
 
       {image.positive_prompt && (
         <div className="meta-section">
-          <div className="meta-section-title">Prompt</div>
+          <div className="meta-section-title meta-section-title-row">
+            <span>Prompt</span>
+            <CopyButton text={image.positive_prompt} className="btn-copy-inline" title="Copy prompt" />
+          </div>
           <pre className="meta-prompt">{image.positive_prompt}</pre>
         </div>
       )}
@@ -183,11 +206,19 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
       if (e.key === 'ArrowRight') nav(1);
       const tag = e.target.tagName;
       const typing = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable;
-      if (!typing && e.key >= '0' && e.key <= '5' && image) {
+      if (typing) return;
+      if (e.key >= '0' && e.key <= '5' && image) {
         onFavoriteChange(image.id, Number(e.key));
       }
-      if (!typing && e.key === 'Delete') {
+      if (e.key === 'Delete') {
         attemptDelete();
+      }
+      if ((e.key === 'f' || e.key === 'F') && image) {
+        onFavoriteChange(image.id, image.favorite === 5 ? 0 : 5); // toggle 5★
+      }
+      if (e.key === ' ') {
+        e.preventDefault(); // don't scroll the page
+        nav(1);
       }
     }
     window.addEventListener('keydown', onKey);

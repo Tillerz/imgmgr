@@ -20,6 +20,8 @@ export default function App() {
   const [showDuplicates, setShowDuplicates] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [hasNewImages, setHasNewImages] = useState(false);
+  const [trashView, setTrashView] = useState(false);
+  const [undo, setUndo] = useState(null); // { ids, count } — last soft-deleted batch
   const lastClickedId = useRef(null);
 
   // SSE: listen for server-pushed change notifications
@@ -46,15 +48,10 @@ export default function App() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     try {
-      const data = await api.images({
-        folder: currentFolder,
-        sort,
-        favorite_min: favoriteMin,
-        search,
-        tag: tagFilter,
-        limit: PAGE,
-        offset: off,
-      });
+      const params = trashView
+        ? { trashed: 1, limit: PAGE, offset: off }
+        : { folder: currentFolder, sort, favorite_min: favoriteMin, search, tag: tagFilter, limit: PAGE, offset: off };
+      const data = await api.images(params);
       if (off === 0) {
         setImages(data.images);
       } else {
@@ -65,7 +62,7 @@ export default function App() {
     } finally {
       loadingRef.current = false;
     }
-  }, [currentFolder, sort, favoriteMin, search, tagFilter]);
+  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView]);
 
   // Initial load and on filter change
   React.useEffect(() => {
@@ -114,14 +111,14 @@ export default function App() {
   }, [qc]);
 
   const handleDelete = useCallback(async (ids) => {
-    if (!window.confirm(`Delete ${ids.length} image(s)? This cannot be undone.`)) return;
+    // Soft delete → trash; no confirm needed since it's recoverable via Undo/Trash.
     const res = await api.delete(ids);
-    const skipped = new Set(res?.skipped || []); // starred images are protected
-    const deleted = ids.filter(id => !skipped.has(id));
-    setImages(prev => prev.filter(img => !deleted.includes(img.id)));
+    const trashed = res?.trashed || [];
+    setImages(prev => prev.filter(img => !trashed.includes(img.id)));
     setSelectedIds(new Set());
-    if (skipped.size) {
-      window.alert(`${skipped.size} starred image(s) were protected and not deleted.`);
+    if (trashed.length) setUndo({ ids: trashed, count: trashed.length });
+    if (res?.skipped?.length) {
+      window.alert(`${res.skipped.length} starred image(s) were protected and not moved to trash.`);
     }
   }, []);
 
@@ -133,7 +130,7 @@ export default function App() {
     if (idx === -1) return;
     const nextImg = images[idx + 1] || images[idx - 1] || null;
     const res = await api.delete([id]);
-    if (res?.skipped?.includes(id)) return; // protected — leave the viewer as-is
+    if (!res?.trashed?.includes(id)) return; // protected/failed — leave the viewer as-is
     setImages(prev => prev.filter(img => img.id !== id));
     setSelectedIds(prev => {
       if (!prev.has(id)) return prev;
@@ -141,8 +138,42 @@ export default function App() {
       next.delete(id);
       return next;
     });
+    setUndo({ ids: [id], count: 1 });
     setViewerId(nextImg ? nextImg.id : null);
   }, [images]);
+
+  // Restore images from the trash. In the trash view they leave the list; the
+  // Undo toast uses this too (followed by a refresh to bring them back).
+  const handleRestore = useCallback(async (ids) => {
+    if (!ids.length) return;
+    await api.restore(ids);
+    setImages(prev => prev.filter(img => !ids.includes(img.id)));
+    setSelectedIds(new Set());
+    qc.invalidateQueries(['folders']);
+  }, [qc]);
+
+  const handleUndo = useCallback(async () => {
+    if (!undo) return;
+    await api.restore(undo.ids);
+    setUndo(null);
+    fetchPage(0); // bring the restored images back into the current view
+    qc.invalidateQueries(['folders']);
+  }, [undo, fetchPage, qc]);
+
+  const handlePurge = useCallback(async (ids) => {
+    if (!ids.length) return;
+    if (!window.confirm(`Permanently delete ${ids.length} image(s) from disk? This cannot be undone.`)) return;
+    await api.purgeTrash(ids);
+    setImages(prev => prev.filter(img => !ids.includes(img.id)));
+    setSelectedIds(new Set());
+  }, []);
+
+  const handleEmptyTrash = useCallback(async () => {
+    if (!window.confirm('Permanently delete ALL images in the trash? This cannot be undone.')) return;
+    await api.purgeTrash([]);
+    setSelectedIds(new Set());
+    fetchPage(0);
+  }, [fetchPage]);
 
   const handleBulkTag = useCallback(async (tag, action) => {
     if (!tag.trim()) return;
@@ -198,6 +229,12 @@ export default function App() {
           <button className="btn btn-secondary" onClick={() => setShowDuplicates(true)}>
             Duplicates
           </button>
+          <button
+            className={`btn btn-secondary ${trashView ? 'active' : ''}`}
+            onClick={() => { setTrashView(v => !v); setSelectedIds(new Set()); }}
+          >
+            {trashView ? '← Back to images' : '🗑 Trash'}
+          </button>
         </header>
 
         <div className="app-body">
@@ -209,37 +246,63 @@ export default function App() {
           </aside>
 
           <main className="main-content">
-            <Toolbar
-              sort={sort} onSort={setSort}
-              favoriteMin={favoriteMin} onFavoriteMin={setFavoriteMin}
-              search={search} onSearch={setSearch}
-              tagFilter={tagFilter} onTagFilter={setTagFilter}
-              selectedCount={selectedIds.size}
-              total={total}
-              loaded={images.length}
-              onSelectAll={async () => {
-                const ids = await api.imageIds({
-                  folder: currentFolder,
-                  favorite_min: favoriteMin,
-                  search,
-                  tag: tagFilter,
-                });
-                setSelectedIds(new Set(ids));
-              }}
-              onDeselectAll={() => setSelectedIds(new Set())}
-              onMoveSelected={() => {/* prompt handled in toolbar */}}
-              onDeleteSelected={() => handleDelete([...selectedIds])}
-              currentFolder={currentFolder}
-              onMoveToFolder={(folder) => handleMove([...selectedIds], folder)}
-              onBulkTag={handleBulkTag}
-              hasNewImages={hasNewImages}
-              onRefreshNew={() => { setHasNewImages(false); fetchPage(0); }}
-            />
+            {trashView ? (
+              <div className="toolbar">
+                <div className="toolbar-row toolbar-actions">
+                  <span className="count-label">
+                    🗑 Trash · {images.length} / {total}
+                    {selectedIds.size > 0 && ` · ${selectedIds.size} selected`}
+                  </span>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set(images.map(i => i.id)))}>All</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setSelectedIds(new Set())}>None</button>
+                  {selectedIds.size > 0 && (
+                    <>
+                      <button className="btn btn-primary btn-sm" onClick={() => handleRestore([...selectedIds])}>
+                        Restore {selectedIds.size}
+                      </button>
+                      <button className="btn btn-danger btn-sm" onClick={() => handlePurge([...selectedIds])}>
+                        Delete {selectedIds.size} permanently
+                      </button>
+                    </>
+                  )}
+                  {total > 0 && (
+                    <button className="btn btn-danger btn-sm" onClick={handleEmptyTrash}>Empty trash</button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <Toolbar
+                sort={sort} onSort={setSort}
+                favoriteMin={favoriteMin} onFavoriteMin={setFavoriteMin}
+                search={search} onSearch={setSearch}
+                tagFilter={tagFilter} onTagFilter={setTagFilter}
+                selectedCount={selectedIds.size}
+                total={total}
+                loaded={images.length}
+                onSelectAll={async () => {
+                  const ids = await api.imageIds({
+                    folder: currentFolder,
+                    favorite_min: favoriteMin,
+                    search,
+                    tag: tagFilter,
+                  });
+                  setSelectedIds(new Set(ids));
+                }}
+                onDeselectAll={() => setSelectedIds(new Set())}
+                onMoveSelected={() => {/* prompt handled in toolbar */}}
+                onDeleteSelected={() => handleDelete([...selectedIds])}
+                currentFolder={currentFolder}
+                onMoveToFolder={(folder) => handleMove([...selectedIds], folder)}
+                onBulkTag={handleBulkTag}
+                hasNewImages={hasNewImages}
+                onRefreshNew={() => { setHasNewImages(false); fetchPage(0); }}
+              />
+            )}
             <TileGrid
               images={images}
               selectedIds={selectedIds}
               onSelect={handleSelect}
-              onOpen={handleOpen}
+              onOpen={trashView ? (id) => handleSelect(id, 'toggle', images.map(i => i.id)) : handleOpen}
               onFavoriteChange={handleFavoriteChange}
               onLoadMore={loadMore}
               hasMore={images.length < total}
@@ -267,6 +330,14 @@ export default function App() {
           onClose={() => setShowDuplicates(false)}
           onDeleted={() => fetchPage(0)}
         />
+      )}
+
+      {undo && !trashView && (
+        <div className="undo-toast">
+          <span>Moved {undo.count} image{undo.count > 1 ? 's' : ''} to trash</span>
+          <button className="undo-btn" onClick={handleUndo}>Undo</button>
+          <button className="undo-dismiss" onClick={() => setUndo(null)} title="Dismiss">✕</button>
+        </div>
       )}
     </DndContext>
   );

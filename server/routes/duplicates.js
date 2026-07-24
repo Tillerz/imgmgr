@@ -1,7 +1,6 @@
 import { Router } from 'express';
-import { unlink } from 'fs/promises';
-import db from '../db.js';
 import { findExactDuplicates, findPerceptualDuplicates, findSeedDuplicates } from '../duplicates.js';
+import { trashImages } from '../trash.js';
 
 const router = Router();
 
@@ -22,20 +21,9 @@ router.get('/', (req, res) => {
 router.delete('/', async (req, res) => {
   const { ids } = req.body;
   if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids required' });
-  const errors = [];
-  const skipped = []; // starred images are protected from deletion
-  for (const id of ids) {
-    const img = db.prepare('SELECT path, favorite FROM images WHERE id = ?').get(id);
-    if (!img) continue;
-    if (img.favorite > 0) { skipped.push(id); continue; }
-    try {
-      await unlink(img.path);
-    } catch (err) {
-      if (err.code !== 'ENOENT') { errors.push({ id, error: err.message }); continue; }
-    }
-    db.prepare('DELETE FROM images WHERE id = ?').run(id);
-  }
-  res.json({ ok: true, errors, skipped });
+  // Soft-delete: duplicates go to the trash too, and starred images are protected.
+  const result = await trashImages(ids);
+  res.json({ ok: true, ...result });
 });
 
 export default router;

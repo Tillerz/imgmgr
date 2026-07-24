@@ -20,6 +20,14 @@ export const api = {
     method: 'DELETE', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids }),
   }).then(json),
+  restore: (ids) => fetch('/api/images/restore', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  }).then(json),
+  purgeTrash: (ids) => fetch('/api/images/trash', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: ids || [] }),
+  }).then(json),
   thumb: (id) => `/api/thumb/${id}`,
   full:  (id) => `/api/full/${id}`,
   folders: () => fetch('/api/folders').then(json),

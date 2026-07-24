@@ -10,11 +10,13 @@ A browser-based image manager built for large collections of AI-generated images
 
 ## Features
 
-- **Tile grid** with WebP thumbnails, infinite scroll, and lazy loading
+- **Virtualized tile grid** — only the visible rows are rendered, so it stays fast with tens of thousands of images; pages stream in as you scroll
 - **Full-size lightbox** with EXIF/metadata sidebar (copy-paste friendly)
 - **Folder tree** — collapsible, with drag-and-drop move support, newest folders first
 - **Star ratings** (0–5) with per-level counts in the filter bar; rate from the grid, the lightbox, or the `0`–`5` keys
-- **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `Del` deletes and advances
+- **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `F` toggles 5★, `Space` advances, `Del` deletes and advances
+- **Copy prompt** — one click copies an image's positive prompt, from a tile's hover button or the lightbox
+- **Trash & undo** — deletes are recoverable: images move to a trash you can restore from, and an Undo appears right after deleting
 - **Delete protection** — starred images can't be deleted from any view
 - **Multi-select** — select images, then move to a folder, delete, or tag them
 - **Duplicate finder** — three modes:
@@ -69,6 +71,7 @@ Edit `config.json` to point at your image root:
 | `scanOnStart` | `true` | Run a full scan when the server starts |
 | `watchForChanges` | `false` | Enable live file watching |
 | `watchInterval` | `5000` | Polling interval in ms (used on DrvFs/WSL2 mounts) |
+| `trashDirName` | `trash` | Sub-directory of `cacheDir` where deleted images are moved (recoverable) |
 
 ## Running
 
@@ -130,21 +133,33 @@ Navigate with the **← →** arrow buttons or keyboard arrow keys. Navigation s
 | Key | Action |
 | --- | --- |
 | `←` / `→` | Previous / next image (loads more as needed) |
+| `Space` | Advance to the next image |
 | `0`–`5` | Set the star rating (`0` clears it) |
-| `Del` | Delete the current image and jump to the next |
+| `F` | Toggle 5★ on/off |
+| `Del` | Delete the current image (to trash) and jump to the next |
 | `Esc` | Close the lightbox |
+
+The prompt panel has a **Copy** button next to the positive prompt, and every tile shows a **copy-prompt** button (⧉) on hover — one click copies that image's positive prompt to the clipboard.
 
 ### Rating images
 
-Click the stars in the lightbox sidebar, hover a tile and use the star overlay directly on the grid, or press the `0`–`5` keys while viewing an image.
+Click the stars in the lightbox sidebar, hover a tile and use the star overlay directly on the grid, or press the `0`–`5` keys (or `F` for 5★) while viewing an image.
 
 ### Multi-select and bulk actions
 
 - Click the **checkbox button** in the top-left corner of a tile to select it (or click again to deselect).
 - Use **All** / **None** in the toolbar to select or clear the whole page.
-- With images selected, **Move N →** opens a folder picker; **Delete N** removes them from disk and the database.
+- With images selected, **Move N →** opens a folder picker; **Delete N** moves them to the trash.
 
 > **Starred images are protected from deletion.** Any image with a rating of 1★ or higher is refused by the delete routes — in bulk delete, the lightbox `Del` shortcut, and the duplicate finder alike. You'll see a notice reporting how many were skipped; remove the stars first if you really want to delete them.
+
+### Trash & undo
+
+Deletes are **recoverable**. Instead of erasing files, imgmgr moves them into a trash folder (under `cacheDir`, so it works even when the image root is read-only) and hides them from all views.
+
+- Right after deleting, an **Undo** toast appears — click it to put the images straight back.
+- Click **🗑 Trash** in the header to browse deleted images. There you can **Restore** selected images to their original folders, **Delete permanently** (removes them from disk for good), or **Empty trash**.
+- The duplicate finder also deletes to the trash, so its removals are recoverable too.
 
 ### Moving images
 
