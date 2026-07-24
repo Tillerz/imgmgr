@@ -231,24 +231,31 @@ Settings/Image Paths:
 
 `POST /api/scan` re-indexes the entire `imageRoot`. This is also called automatically on startup when `scanOnStart` is true. Scan progress is logged to the server console.
 
+## API
+
+imgmgr is fully driven by a small JSON HTTP API (the web client is just a consumer of it). Every endpoint — listing/filtering, ratings, tags, trash, facets, similarity search, duplicates, scanning, and the SSE live-update stream — is documented in **[docs/API.md](docs/API.md)**.
+
 ## File structure
 
 ```
 imgmgr/
 ├── server/
 │   ├── index.js          # Express app, Vite middleware, SSE endpoint
-│   ├── config.js         # Loads config.json
-│   ├── db.js             # SQLite schema and connection
+│   ├── config.js         # Loads config.json, derives TRASH_DIR
+│   ├── db.js             # SQLite schema, migrations, connection
+│   ├── migrate.js        # One-time backfill of generation-param facets
 │   ├── scanner.js        # Full directory scan + file indexing
-│   ├── meta.js           # PNG tEXt and WebP EXIF metadata extraction
+│   ├── meta.js           # PNG tEXt / WebP+JPEG EXIF + gen-param extraction
 │   ├── thumbnails.js     # Sharp thumbnail generation, pHash, file hash
 │   ├── duplicates.js     # Exact / perceptual / seed duplicate detection
+│   ├── trash.js          # Soft-delete: trash / restore / purge
 │   ├── watcher.js        # Chokidar file watcher (today's folder only)
 │   ├── events.js         # SSE broadcast utility
 │   └── routes/
-│       ├── images.js     # GET/PATCH/DELETE image endpoints
+│       ├── images.js     # Image list/filter, ratings, tags, trash, facets, similar
 │       ├── folders.js    # Folder listing and creation
-│       └── duplicates.js # Duplicate find and delete endpoints
+│       ├── duplicates.js # Duplicate find and delete endpoints
+│       └── tags.js       # Global tag listing and bulk add/remove
 ├── client/
 │   ├── src/
 │   │   ├── App.jsx       # Root component, state, SSE hook
@@ -261,6 +268,8 @@ imgmgr/
 │   │       ├── StarRating.jsx
 │   │       └── DuplicatePanel.jsx
 │   └── style.css
+├── docs/
+│   └── API.md            # HTTP API reference
 ├── config.json
 └── package.json
 ```
