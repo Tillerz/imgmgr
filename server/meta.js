@@ -105,6 +105,31 @@ export function parseSDParameters(raw) {
   return { positive, negative };
 }
 
+// Discrete generation parameters we pull out of the SD params line for faceting.
+export const GEN_PARAM_KEYS = [
+  'Model', 'Sampler', 'Steps', 'CFG scale', 'Schedule type',
+  'Model hash', 'VAE', 'Clip skip', 'Size', 'Denoising strength',
+];
+
+// Parse the trailing "Steps: 20, Sampler: Euler a, CFG scale: 7, Model: ..."
+// line of an SD parameters/UserComment string into discrete key/value pairs.
+// Values may contain commas, so we split only at ", <Key>:" boundaries.
+export function parseGenerationParams(full) {
+  if (!full) return {};
+  const idx = full.search(/\bSteps:\s/);
+  if (idx === -1) return {};
+  const tail = full.slice(idx).replace(/\s+/g, ' ').trim();
+  const out = {};
+  const re = /([A-Za-z][A-Za-z0-9 ]*?):\s*(.*?)(?=,\s*[A-Za-z][A-Za-z0-9 ]*?:\s|$)/g;
+  let m;
+  while ((m = re.exec(tail)) !== null) {
+    const key = m[1].trim();
+    const val = m[2].trim().replace(/,+$/, '').trim();
+    if (key && val) out[key] = val;
+  }
+  return out;
+}
+
 // Parse an EXIF/TIFF buffer with exif-reader and populate result.raw plus the
 // SD prompts carried in UserComment. Shared by the WebP and JPEG paths.
 function applyExifBuffer(exifBuf, result) {
@@ -170,6 +195,16 @@ export async function extractMetadata(filePath) {
           result.negative_prompt = negative;
           break;
         }
+      }
+    }
+
+    // Extract discrete generation params (Model, Sampler, …) from whichever
+    // source string carries them, so they get stored as facetable metadata rows.
+    const sdSource = result.raw?.UserComment || result.raw?.parameters || result.raw?.Parameters || '';
+    if (typeof sdSource === 'string' && sdSource) {
+      const gp = parseGenerationParams(sdSource);
+      for (const k of GEN_PARAM_KEYS) {
+        if (gp[k] != null && gp[k] !== '') result.raw[k] = gp[k];
       }
     }
   } catch {

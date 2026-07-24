@@ -22,6 +22,8 @@ export default function App() {
   const [hasNewImages, setHasNewImages] = useState(false);
   const [trashView, setTrashView] = useState(false);
   const [undo, setUndo] = useState(null); // { ids, count } — last soft-deleted batch
+  const [facets, setFacets] = useState({}); // { Model: '…', Sampler: '…' }
+  const [similarTo, setSimilarTo] = useState(null); // image id we're showing matches for
   const lastClickedId = useRef(null);
 
   // SSE: listen for server-pushed change notifications
@@ -48,21 +50,29 @@ export default function App() {
     if (loadingRef.current) return;
     loadingRef.current = true;
     try {
-      const params = trashView
-        ? { trashed: 1, limit: PAGE, offset: off }
-        : { folder: currentFolder, sort, favorite_min: favoriteMin, search, tag: tagFilter, limit: PAGE, offset: off };
-      const data = await api.images(params);
-      if (off === 0) {
+      let data;
+      if (similarTo) {
+        data = await api.similar(similarTo); // returns the whole match set, unpaginated
+      } else {
+        const params = trashView
+          ? { trashed: 1, limit: PAGE, offset: off }
+          : {
+              folder: currentFolder, sort, favorite_min: favoriteMin, search, tag: tagFilter,
+              facets: JSON.stringify(facets), limit: PAGE, offset: off,
+            };
+        data = await api.images(params);
+      }
+      if (off === 0 || similarTo) {
         setImages(data.images);
       } else {
         setImages(prev => [...prev, ...data.images]);
       }
       setTotal(data.total);
-      setOffset(off + data.images.length);
+      setOffset((similarTo ? 0 : off) + data.images.length);
     } finally {
       loadingRef.current = false;
     }
-  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView]);
+  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView, facets, similarTo]);
 
   // Initial load and on filter change
   React.useEffect(() => {
@@ -102,6 +112,23 @@ export default function App() {
     setImages(prev => prev.map(img => img.id === id ? { ...img, favorite: level } : img));
     qc.setQueryData(['image', id], prev => prev ? { ...prev, favorite: level } : prev);
   }, [qc]);
+
+  const handleBulkRate = useCallback(async (level) => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    await api.bulkFavorite(ids, level);
+    const idSet = new Set(ids);
+    setImages(prev => prev.map(img => idSet.has(img.id) ? { ...img, favorite: level } : img));
+    ids.forEach(id => qc.setQueryData(['image', id], prev => prev ? { ...prev, favorite: level } : prev));
+  }, [selectedIds, qc]);
+
+  // Show images visually similar to the given one (from the lightbox).
+  const showSimilar = useCallback((id) => {
+    setTrashView(false);
+    setSelectedIds(new Set());
+    setViewerId(null);
+    setSimilarTo(id);
+  }, []);
 
   const handleMove = useCallback(async (ids, targetFolder) => {
     await api.move(ids, targetFolder);
@@ -231,7 +258,7 @@ export default function App() {
           </button>
           <button
             className={`btn btn-secondary ${trashView ? 'active' : ''}`}
-            onClick={() => { setTrashView(v => !v); setSelectedIds(new Set()); }}
+            onClick={() => { setSimilarTo(null); setTrashView(v => !v); setSelectedIds(new Set()); }}
           >
             {trashView ? '← Back to images' : '🗑 Trash'}
           </button>
@@ -270,21 +297,35 @@ export default function App() {
                   )}
                 </div>
               </div>
+            ) : similarTo ? (
+              <div className="toolbar">
+                <div className="toolbar-row toolbar-actions">
+                  <span className="count-label">🔍 Visually similar images · {images.length} found</span>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setSimilarTo(null)}>← Back to all images</button>
+                </div>
+              </div>
             ) : (
               <Toolbar
                 sort={sort} onSort={setSort}
                 favoriteMin={favoriteMin} onFavoriteMin={setFavoriteMin}
                 search={search} onSearch={setSearch}
                 tagFilter={tagFilter} onTagFilter={setTagFilter}
+                facets={facets} onFacet={(key, value) => setFacets(prev => {
+                  const next = { ...prev };
+                  if (value) next[key] = value; else delete next[key];
+                  return next;
+                })}
                 selectedCount={selectedIds.size}
                 total={total}
                 loaded={images.length}
+                onBulkRate={handleBulkRate}
                 onSelectAll={async () => {
                   const ids = await api.imageIds({
                     folder: currentFolder,
                     favorite_min: favoriteMin,
                     search,
                     tag: tagFilter,
+                    facets: JSON.stringify(facets),
                   });
                   setSelectedIds(new Set(ids));
                 }}
@@ -322,6 +363,7 @@ export default function App() {
           onLoadMore={loadMore}
           hasMore={images.length < total}
           total={total}
+          onFindSimilar={showSimilar}
         />
       )}
 

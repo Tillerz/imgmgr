@@ -6,6 +6,7 @@ import { createServer as createViteServer } from 'vite';
 import { config, ROOT } from './config.js';
 import db from './db.js';
 import { runScan, isScanRunning } from './scanner.js';
+import { backfillGenParams } from './migrate.js';
 import { startWatcher } from './watcher.js';
 import imageRoutes from './routes/images.js';
 import folderRoutes from './routes/folders.js';
@@ -93,6 +94,11 @@ if (existsSync(distDir)) {
 app.listen(config.port, () => {
   console.log(`imgmgr server on http://localhost:${config.port}`);
   console.log(`Image root: ${config.imageRoot}`);
+  // One-time backfill of discrete generation params for the facet filters.
+  try {
+    const bf = backfillGenParams();
+    if (!bf.skipped) console.log(`Backfilled gen params: ${bf.rowsAdded} rows across ${bf.imagesUpdated} images`);
+  } catch (e) { console.error('Gen-param backfill error:', e); }
   if (config.scanOnStart) {
     console.log('Starting initial scan...');
     runScan(({ indexed }) => {

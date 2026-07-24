@@ -857,6 +857,9 @@ html, body, #root {
 .tag-chip-pick:hover { border-color: var(--accent); color: var(--text-primary); }
 .tag-chip-pick.active { border-color: var(--accent); background: var(--accent); color: #fff; }
 
+/* --- Bulk rate control ------------------------------------- */
+.bulk-rate { display: inline-flex; align-items: center; gap: 6px; }
+
 /* --- Trash toggle + undo toast ----------------------------- */
 .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 

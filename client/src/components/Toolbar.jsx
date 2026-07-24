@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api.js';
+import StarRating from './StarRating.jsx';
 
 const SORTS = [
   { value: 'mtime-desc', label: 'Date ↓' },
@@ -11,14 +12,40 @@ const SORTS = [
   { value: 'fav-asc',    label: 'Stars ↑' },
 ];
 
+// Dropdown of distinct values for a metadata key (Model, Sampler, …).
+function FacetSelect({ label, facetKey, value, onFacet }) {
+  const { data: values = [] } = useQuery({
+    queryKey: ['metaValues', facetKey],
+    queryFn: () => api.metaValues(facetKey),
+    staleTime: 60_000,
+  });
+  if (!values.length) return null;
+  // Natural sort by value (case-insensitive, numeric-aware so "20" < "150").
+  const sorted = [...values].sort((a, b) =>
+    a.value.localeCompare(b.value, undefined, { numeric: true, sensitivity: 'base' }));
+  return (
+    <select
+      className="select-sm"
+      value={value || ''}
+      onChange={e => onFacet(facetKey, e.target.value)}
+      title={`Filter by ${label}`}
+    >
+      <option value="">{label}: all</option>
+      {sorted.map(v => <option key={v.value} value={v.value}>{v.value} ({v.n})</option>)}
+    </select>
+  );
+}
+
 export default function Toolbar({
   sort, onSort,
   favoriteMin, onFavoriteMin,
   search, onSearch,
   tagFilter, onTagFilter,
+  facets = {}, onFacet,
   selectedCount, total, loaded,
   onSelectAll, onDeselectAll,
   onDeleteSelected,
+  onBulkRate,
   currentFolder,
   onMoveToFolder,
   onBulkTag,
@@ -78,6 +105,10 @@ export default function Toolbar({
           </select>
         )}
 
+        <FacetSelect label="Model" facetKey="Model" value={facets.Model} onFacet={onFacet} />
+        <FacetSelect label="Sampler" facetKey="Sampler" value={facets.Sampler} onFacet={onFacet} />
+        <FacetSelect label="Steps" facetKey="Steps" value={facets.Steps} onFacet={onFacet} />
+
         <div className="star-filter">
           <span className="filter-label">Min ★</span>
           <button
@@ -118,6 +149,12 @@ export default function Toolbar({
 
         {selectedCount > 0 && (
           <>
+            <span className="bulk-rate">
+              <span className="filter-label">Rate:</span>
+              <StarRating value={0} onChange={onBulkRate} size="sm" />
+              <button className="btn btn-secondary btn-xs" onClick={() => onBulkRate(0)} title="Clear rating on selected">0★</button>
+            </span>
+
             <div className="move-menu-wrap">
               <button className="btn btn-primary btn-sm" onClick={() => setShowMoveMenu(v => !v)}>
                 Move {selectedCount} →

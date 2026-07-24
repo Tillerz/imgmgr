@@ -4,6 +4,7 @@ import { promisify } from 'util';
 import { join, dirname } from 'path';
 import db from '../db.js';
 import { trashImages, restoreImages, purgeImages } from '../trash.js';
+import { hammingDistance } from '../thumbnails.js';
 
 const router = Router();
 
@@ -63,16 +64,18 @@ const unlinkP = promisify(unlink);
 // Counts per favourite level — must be before /:id
 router.get('/counts', (req, res) => {
   const { folder = '', search = '' } = req.query;
-  const conditions = ['trashed_at IS NULL'];
+  const conditions = ['i.trashed_at IS NULL'];
+  const joins = [];
   const params = [];
-  if (folder) { conditions.push('folder_path = ?'); params.push(folder); }
+  if (folder) { conditions.push('i.folder_path = ?'); params.push(folder); }
   if (search) {
-    const s = buildSearchClause(search);
+    const s = buildSearchClause(search, 'i.');
     if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
   }
+  applyFacets(req, joins, conditions, params);
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = db.prepare(
-    `SELECT favorite, COUNT(*) as n FROM images ${where} GROUP BY favorite ORDER BY favorite`
+    `SELECT i.favorite AS favorite, COUNT(*) as n FROM images i ${joins.join(' ')} ${where} GROUP BY i.favorite ORDER BY i.favorite`
   ).all(...params);
   const counts = {};
   for (const row of rows) counts[row.favorite] = row.n;
@@ -93,6 +96,7 @@ router.get('/ids', (req, res) => {
     if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
   }
   if (tag) { joins.push('JOIN tags tg ON tg.image_id = i.id'); conditions.push('tg.tag = ?'); params.push(tag); }
+  applyFacets(req, joins, conditions, params);
 
   const join = joins.join(' ');
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -105,6 +109,36 @@ router.get('/meta/keys', (req, res) => {
   const rows = db.prepare('SELECT DISTINCT key FROM metadata ORDER BY key').all();
   res.json(rows.map(r => r.key));
 });
+
+// Distinct values (with counts) for a metadata key — powers the facet dropdowns.
+router.get('/meta/values', (req, res) => {
+  const { key } = req.query;
+  if (!key) return res.json([]);
+  const rows = db.prepare(`
+    SELECT m.value AS value, COUNT(*) AS n
+    FROM metadata m JOIN images i ON i.id = m.image_id
+    WHERE m.key = ? AND i.trashed_at IS NULL AND m.value <> ''
+    GROUP BY m.value
+    ORDER BY n DESC, value ASC
+    LIMIT 500
+  `).all(String(key));
+  res.json(rows);
+});
+
+// Parse the `facets` query param (JSON: {key: value}) into JOIN/WHERE fragments
+// matching images that have a metadata row with that exact key/value.
+function applyFacets(req, joins, conditions, params) {
+  let facets = {};
+  try { facets = req.query.facets ? JSON.parse(req.query.facets) : {}; } catch { facets = {}; }
+  let i = 0;
+  for (const [key, value] of Object.entries(facets)) {
+    if (value == null || value === '') continue;
+    const a = `mf${i++}`;
+    joins.push(`JOIN metadata ${a} ON ${a}.image_id = i.id`);
+    conditions.push(`${a}.key = ? AND ${a}.value = ?`);
+    params.push(String(key), String(value));
+  }
+}
 
 // List images with filtering, sorting, pagination
 router.get('/', (req, res) => {
@@ -149,6 +183,7 @@ router.get('/', (req, res) => {
     conditions.push('tg.tag = ?');
     params.push(tag);
   }
+  applyFacets(req, joins, conditions, params);
 
   const join = joins.join(' ');
 
@@ -205,12 +240,48 @@ router.delete('/:id/tags/:tag', (req, res) => {
   res.json({ ok: true });
 });
 
+// Find visually similar images (perceptual hash within `threshold` bits)
+router.get('/:id/similar', (req, res) => {
+  const threshold = Math.max(0, Math.min(32, Number(req.query.threshold ?? 10)));
+  const limit = Math.max(1, Math.min(500, Number(req.query.limit ?? 200)));
+  const target = db.prepare('SELECT phash FROM images WHERE id = ?').get(req.params.id);
+  if (!target?.phash) return res.json({ images: [], total: 0 });
+
+  const rows = db.prepare(`
+    SELECT id, path, filename, folder_path, size, mtime, width, height, format,
+           favorite, file_hash, positive_prompt, negative_prompt, phash
+    FROM images
+    WHERE phash IS NOT NULL AND trashed_at IS NULL AND id != ?
+  `).all(req.params.id);
+
+  const scored = [];
+  for (const r of rows) {
+    const d = hammingDistance(target.phash, r.phash);
+    if (d <= threshold) { const { phash, ...rest } = r; scored.push({ ...rest, distance: d }); }
+  }
+  scored.sort((a, b) => a.distance - b.distance);
+  const images = scored.slice(0, limit);
+  res.json({ images, total: images.length });
+});
+
 // Get all metadata for an image
 router.get('/:id/metadata', (req, res) => {
   const img = db.prepare('SELECT id FROM images WHERE id = ?').get(req.params.id);
   if (!img) return res.status(404).json({ error: 'not found' });
   const rows = db.prepare('SELECT key, value FROM metadata WHERE image_id = ? ORDER BY key').all(req.params.id);
   res.json(rows);
+});
+
+// Bulk-set favorite level for many images at once — must be before /:id
+router.patch('/favorite/bulk', (req, res) => {
+  const { ids, favorite } = req.body;
+  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids required' });
+  if (favorite === undefined) return res.status(400).json({ error: 'favorite required' });
+  const level = Math.max(0, Math.min(5, Number(favorite)));
+  const stmt = db.prepare('UPDATE images SET favorite = ? WHERE id = ?');
+  const tx = db.transaction((list) => { for (const id of list) stmt.run(level, id); });
+  tx(ids);
+  res.json({ ok: true, updated: ids.length, favorite: level });
 });
 
 // Update favorite level

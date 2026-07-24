@@ -128,7 +128,10 @@ function MetaPanel({ imageId, image }) {
 
       {image.negative_prompt && (
         <div className="meta-section">
-          <div className="meta-section-title">Negative prompt</div>
+          <div className="meta-section-title meta-section-title-row">
+            <span>Negative prompt</span>
+            <CopyButton text={image.negative_prompt} className="btn-copy-inline" title="Copy negative prompt" />
+          </div>
           <pre className="meta-prompt meta-negative">{image.negative_prompt}</pre>
         </div>
       )}
@@ -164,7 +167,7 @@ function MetaPanel({ imageId, image }) {
   );
 }
 
-export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, onFavoriteChange, onDelete, onLoadMore, hasMore, total }) {
+export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, onFavoriteChange, onDelete, onLoadMore, hasMore, total, onFindSimilar }) {
   const [zoom, setZoom] = useState(false);
   const [flash, setFlash] = useState('');
   const imgRef = useRef(null);
@@ -242,6 +245,15 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
             <button className="btn-icon" onClick={() => nav(1)} disabled={!canNext}>›</button>
           </div>
           <div className="viewer-topbar-right">
+            {image && onFindSimilar && (
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => onFindSimilar(image.id)}
+                title="Find visually similar images"
+              >
+                🔍 Similar
+              </button>
+            )}
             {image && (
               <StarRating value={image.favorite} onChange={v => onFavoriteChange(image.id, v)} size="lg" />
             )}

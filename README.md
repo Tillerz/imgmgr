@@ -15,10 +15,12 @@ A browser-based image manager built for large collections of AI-generated images
 - **Folder tree** — collapsible, with drag-and-drop move support, newest folders first
 - **Star ratings** (0–5) with per-level counts in the filter bar; rate from the grid, the lightbox, or the `0`–`5` keys
 - **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `F` toggles 5★, `Space` advances, `Del` deletes and advances
-- **Copy prompt** — one click copies an image's positive prompt, from a tile's hover button or the lightbox
+- **Copy prompt** — one click copies an image's positive or negative prompt, from a tile's hover button or the lightbox
 - **Trash & undo** — deletes are recoverable: images move to a trash you can restore from, and an Undo appears right after deleting
 - **Delete protection** — starred images can't be deleted from any view
-- **Multi-select** — select images, then move to a folder, delete, or tag them
+- **Multi-select** — select images, then move to a folder, delete, tag, or **bulk-rate** them
+- **Metadata facet filters** — filter by **Model**, **Sampler**, or **Steps** dropdowns (extracted from the SD generation parameters), combinable with search and folders
+- **Find similar** — from the lightbox, discover visually similar images using the perceptual hash
 - **Duplicate finder** — three modes:
   - *Exact* — identical file content (MD5 hash)
   - *Visual* — perceptually similar images (dHash, slow!)
@@ -99,7 +101,14 @@ npm start       # serves dist/ via Express
 - The **folder tree** on the left lists all indexed folders. Click a folder to filter. Click the **▸** arrow to expand/collapse subfolders.
 - Use the **search bar** to filter by filename or positive-prompt text (see [Search syntax](#search-syntax) below).
 - Use the **Min ★** buttons to show only images at or above a star rating. Counts are shown next to each button.
+- The **Model / Sampler / Steps** dropdowns filter by the SD generation parameters (see [Facet filters](#facet-filters)). They combine with search, folder, and each other.
 - The **sort dropdown** supports date, name, and star rating in both directions.
+
+#### Facet filters
+
+imgmgr parses the generation parameters (the `Steps: …, Sampler: …, CFG scale: …, Model: …` line) out of each image's embedded metadata and stores them as discrete, filterable fields. The toolbar exposes **Model**, **Sampler**, and **Steps** dropdowns — each option shows how many images match — so you can quickly narrow to, say, everything made with a particular checkpoint and sampler. Selecting values in more than one dropdown ANDs them together, and the star-rating counts update to reflect the active facets.
+
+Existing libraries are backfilled automatically on first launch after upgrading (a one-time pass over the database); newly scanned images get the fields during indexing.
 
 #### Search syntax
 
@@ -123,8 +132,10 @@ The search bar matches against both the **filename** and the **positive prompt**
 
 Click any thumbnail to open the lightbox. The right panel shows:
 - Full EXIF/metadata key-value pairs (click any value to copy)
-- Positive and negative prompts
+- Positive and negative prompts, each with its own **Copy** button
 - Star rating control
+
+The lightbox top bar also has a **🔍 Similar** button — see [Find similar images](#find-similar-images).
 
 Navigate with the **← →** arrow buttons or keyboard arrow keys. Navigation spans the **entire current result set** — additional pages load automatically as you move past the images already fetched, so you can arrow all the way to the last (or first) image without scrolling the grid first. The counter shows your position within the full total (e.g. `198 / 79158`).
 
@@ -139,17 +150,21 @@ Navigate with the **← →** arrow buttons or keyboard arrow keys. Navigation s
 | `Del` | Delete the current image (to trash) and jump to the next |
 | `Esc` | Close the lightbox |
 
-The prompt panel has a **Copy** button next to the positive prompt, and every tile shows a **copy-prompt** button (⧉) on hover — one click copies that image's positive prompt to the clipboard.
+The prompt panel has **Copy** buttons next to both the positive and negative prompt, and every tile shows a **copy-prompt** button (⧉) on hover — one click copies that image's positive prompt to the clipboard.
+
+### Find similar images
+
+Open any image in the lightbox and click **🔍 Similar** in the top bar. imgmgr compares the image's perceptual hash (dHash) against the whole library and shows every visually similar image, nearest first. A banner indicates you're in similar-search mode — click **← Back to all images** to return. This reuses the same hashing that powers the duplicate finder, so it's essentially free.
 
 ### Rating images
 
-Click the stars in the lightbox sidebar, hover a tile and use the star overlay directly on the grid, or press the `0`–`5` keys (or `F` for 5★) while viewing an image.
+Click the stars in the lightbox sidebar, hover a tile and use the star overlay directly on the grid, or press the `0`–`5` keys (or `F` for 5★) while viewing an image. To rate many at once, select images and use the **Rate:** star control in the toolbar (the **0★** button clears the rating on the selection).
 
 ### Multi-select and bulk actions
 
 - Click the **checkbox button** in the top-left corner of a tile to select it (or click again to deselect).
 - Use **All** / **None** in the toolbar to select or clear the whole page.
-- With images selected, **Move N →** opens a folder picker; **Delete N** moves them to the trash.
+- With images selected, **Rate:** sets a star rating on all of them, **Move N →** opens a folder picker, **Tag N →** adds/removes a tag, and **Delete N** moves them to the trash.
 
 > **Starred images are protected from deletion.** Any image with a rating of 1★ or higher is refused by the delete routes — in bulk delete, the lightbox `Del` shortcut, and the duplicate finder alike. You'll see a notice reporting how many were skipped; remove the stars first if you really want to delete them.
 
