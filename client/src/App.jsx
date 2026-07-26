@@ -37,17 +37,19 @@ export default function App() {
   // All loaded images for current view (accumulated pages)
   const [images, setImages] = useState([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const PAGE = 100;
 
-  const queryKey = ['images', currentFolder, sort, favoriteMin, search, tagFilter];
+  // Next page offset, advanced synchronously so a burst of scroll events can't
+  // re-request the same page before React commits the new state (which caused
+  // duplicate pages to be appended).
+  const offsetRef = useRef(0);
+  const loadingRef = useRef(false);   // blocks concurrent appends
+  const reqIdRef = useRef(0);         // supersedes in-flight loads when filters change
 
-  // Guards against concurrent/duplicate page loads (scroll + viewer can both ask)
-  const loadingRef = useRef(false);
-
-  // Refetch when filters change — reset accumulated images
+  // Fetch a page. off === 0 resets the list (filter change); otherwise appends.
   const fetchPage = useCallback(async (off = 0) => {
-    if (loadingRef.current) return;
+    if (off !== 0 && loadingRef.current) return; // only block concurrent appends
+    const myReq = ++reqIdRef.current;
     loadingRef.current = true;
     try {
       let data;
@@ -62,27 +64,29 @@ export default function App() {
             };
         data = await api.images(params);
       }
+      if (myReq !== reqIdRef.current) return; // a newer load superseded this one
+      offsetRef.current = (similarTo ? 0 : off) + data.images.length;
       if (off === 0 || similarTo) {
         setImages(data.images);
       } else {
         setImages(prev => [...prev, ...data.images]);
       }
       setTotal(data.total);
-      setOffset((similarTo ? 0 : off) + data.images.length);
     } finally {
-      loadingRef.current = false;
+      if (myReq === reqIdRef.current) loadingRef.current = false;
     }
   }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView, facets, similarTo]);
 
   // Initial load and on filter change
   React.useEffect(() => {
     setSelectedIds(new Set());
+    offsetRef.current = 0;
     fetchPage(0);
   }, [fetchPage]);
 
   const loadMore = useCallback(() => {
-    if (images.length < total) fetchPage(offset);
-  }, [images.length, total, offset, fetchPage]);
+    if (!loadingRef.current && offsetRef.current < total) fetchPage(offsetRef.current);
+  }, [total, fetchPage]);
 
   const handleSelect = useCallback((id, mode, sortedIds) => {
     setSelectedIds(prev => {
