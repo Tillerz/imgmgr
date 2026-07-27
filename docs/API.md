@@ -48,9 +48,9 @@ count (not just this page). Each `Image`:
 ```json
 {
   "id": 97310,
-  "path": "/mnt/sd/images/2026/2026-07-23/20260723230644-1171577535.webp",
+  "path": "~/sd/images/2026/2026-07-23/20260723230644-1171577535.webp",
   "filename": "20260723230644-1171577535.webp",
-  "folder_path": "/mnt/sd/images/2026/2026-07-23",
+  "folder_path": "~/sd/images/2026/2026-07-23",
   "size": 177276,
   "mtime": 1784900000000,
   "width": 1024,

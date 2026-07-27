@@ -11,11 +11,11 @@ A browser-based image manager built for large collections of AI-generated images
 ## Features
 
 - **Virtualized tile grid** — only the visible rows are rendered, so it stays fast with tens of thousands of images; pages stream in as you scroll
-- **Full-size lightbox** with EXIF/metadata sidebar (copy-paste friendly)
+- **Full-size lightbox** with a rich metadata sidebar — separate **Prompt / Negative prompt / Template** sections that are collapsible and resizable, LoRA and wildcard highlighting, a resizable panel width, and the generation params surfaced first
 - **Folder tree** — collapsible, with drag-and-drop move support, newest folders first
 - **Star ratings** (0–5) with per-level counts in the filter bar; rate from the grid, the lightbox, or the `0`–`5` keys
 - **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `F` toggles 5★, `Space` advances, `Del` deletes and advances
-- **Copy prompt** — one click copies an image's positive or negative prompt, from a tile's hover button or the lightbox
+- **Copy prompt** — one click copies an image's positive prompt, negative prompt, or template, from a tile's hover button or the lightbox
 - **Trash & undo** — deletes are recoverable: images move to a trash you can restore from, and an Undo appears right after deleting
 - **Delete protection** — starred images can't be deleted from any view
 - **Multi-select** — select images, then move to a folder, delete, tag, or **bulk-rate** them
@@ -65,7 +65,7 @@ Edit `config.json` to point at your image root:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `imageRoot` | `/mnt/sd/images` | Root directory scanned for images |
+| `imageRoot` | `~/sd/imgmgr` | Root directory scanned for images |
 | `thumbnailSize` | `220` | Max thumbnail dimension in pixels |
 | `thumbnailQuality` | `82` | WebP thumbnail quality (1–100) |
 | `cacheDir` | `.cache` | Directory for the SQLite DB and thumbnail cache (relative to project root) |
@@ -131,11 +131,24 @@ The search bar matches against both the **filename** and the **positive prompt**
 ### Viewing an image
 
 Click any thumbnail to open the lightbox. The right panel shows:
-- Full EXIF/metadata key-value pairs (click any value to copy)
-- Positive and negative prompts, each with its own **Copy** button
-- Star rating control
+
+- **Tags** (add/remove them right at the top)
+- Dimensions, size, date, and folder
+- **Prompt**, **Negative prompt**, and **Template** sections, each with its own **Copy** button
+- **EXIF / Metadata** — the generation params come first in a fixed order (**Model, Sampler, Steps, CFG scale, UNET, LoRA networks, Seed**), then everything else
+- A collapsed **UserComment (raw)** section holding the unparsed metadata string
+- Star rating control (top bar)
 
 The lightbox top bar also has a **🔍 Similar** button — see [Find similar images](#find-similar-images).
+
+#### Reading long prompts
+
+The metadata panel is built for triaging prompts:
+
+- **Collapse / expand** any of Prompt, Negative prompt, Template, and UserComment by clicking its heading. The collapsed/expanded state is remembered across images and sessions.
+- **Resize** an expanded prompt field by dragging its bottom edge, and **resize the whole panel's width** by dragging the divider between the image and the sidebar (also remembered).
+- **LoRA tags** (`<lora:…>`) are highlighted in light green and **wildcards** (`__word__`) in cyan, in all three prompt fields.
+- An empty or missing Negative prompt is hidden entirely, and the Template is shown as its own section rather than being mixed into the negative prompt.
 
 Navigate with the **← →** arrow buttons or keyboard arrow keys. Navigation spans the **entire current result set** — additional pages load automatically as you move past the images already fetched, so you can arrow all the way to the last (or first) image without scrolling the grid first. The counter shows your position within the full total (e.g. `198 / 79158`).
 
@@ -150,7 +163,7 @@ Navigate with the **← →** arrow buttons or keyboard arrow keys. Navigation s
 | `Del` | Delete the current image (to trash) and jump to the next |
 | `Esc` | Close the lightbox |
 
-The prompt panel has **Copy** buttons next to both the positive and negative prompt, and every tile shows a **copy-prompt** button (⧉) on hover — one click copies that image's positive prompt to the clipboard.
+Each prompt section (Prompt, Negative prompt, Template) has its own **Copy** button, and every tile shows a **copy-prompt** button (⧉) on hover — one click copies that image's positive prompt to the clipboard.
 
 ### Find similar images
 
@@ -190,7 +203,7 @@ Click **Duplicates** in the toolbar to open the duplicate panel.
 | **Visual** | Groups images whose perceptual hash (dHash) differs by ≤ 8 bits |
 | **Seed** | Groups images sharing the same generation seed (last number in the filename, e.g. `00042-1827738702.png`) |
 
-Inside each group, click tiles to select them, or use **Keep oldest, select rest** to pre-select all but the first. Then click **Delete N selected** to remove them.
+Selection spans every group at once. Use the action bar at the top of the panel to **Keep oldest in all, select rest** (across all groups), **Clear**, or **Delete N selected** — so you can clean up every folder's duplicates in one pass instead of group by group. Each group also has its own **Keep oldest, select rest** button, and you can click individual tiles to fine-tune the selection. Deletions go to the trash, so they're recoverable.
 
 **NOTE**: The seed duplicate detection only works automatically when you use software like [SDNext](https://github.com/vladmandic/sdnext) with these settings:
 ```

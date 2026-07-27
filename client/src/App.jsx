@@ -249,7 +249,7 @@ export default function App() {
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
       <div className="app-layout">
         <header className="app-header">
-          <span className="app-title">imgmgr</span>
+          <span className="app-title">ImgMgr by Tillerz</span>
           <button
             className={`btn btn-secondary ${scanning ? 'scanning' : ''}`}
             onClick={handleScan}

@@ -7,7 +7,7 @@ export const ROOT = join(__dirname, '..');
 
 const defaults = {
   port: 3000,
-  imageRoot: '/mnt/sd/imgmgr',
+  imageRoot: '~/sd/imgmgr',
   thumbnailSize: 220,
   thumbnailQuality: 82,
   cacheDir: '.cache',

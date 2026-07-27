@@ -23,6 +23,107 @@ function CopyButton({ text, className = '', label = 'Copy', title }) {
   );
 }
 
+// Collapse state persisted to localStorage so it carries across images/sessions.
+function usePersistentState(key, initial) {
+  const [v, setV] = useState(() => {
+    try { const s = localStorage.getItem(key); return s === null ? initial : JSON.parse(s); }
+    catch { return initial; }
+  });
+  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }, [key, v]);
+  return [v, setV];
+}
+
+// Parse a comma-separated "Steps: 30, Sampler: …, Model: …" params line.
+function parseParams(tail) {
+  const out = {};
+  if (!tail) return out;
+  const flat = tail.replace(/\s+/g, ' ');
+  const re = /([A-Za-z][A-Za-z0-9 ]*?):\s*(.*?)(?=,\s*[A-Za-z][A-Za-z0-9 ]*?:\s|$)/g;
+  let m;
+  while ((m = re.exec(flat)) !== null) {
+    const k = m[1].trim();
+    const v = m[2].trim().replace(/,+$/, '').trim();
+    if (k && v) out[k] = v;
+  }
+  return out;
+}
+
+// Split a full a1111 metadata string into its prompt / template / params parts.
+// Sections may appear in any order; we anchor on their labels and slice between.
+function parseSource(src) {
+  const out = { positive: '', negative: '', template: '', negativeTemplate: '', params: {}, loras: [] };
+  if (!src || typeof src !== 'string') return out;
+  const anchors = [];
+  const add = (key, re) => {
+    const m = re.exec(src);
+    if (!m) return;
+    const leadWs = m[0].match(/^\s*/)[0].length;
+    // labelStart = start of the label word (past leading whitespace);
+    // contentStart = past the whole label (so section text excludes the label).
+    anchors.push({ key, start: m.index, labelStart: m.index + leadWs, contentStart: m.index + m[0].length });
+  };
+  add('negative', /(?:^|\n)\s*Negative prompt:[ \t]*/);
+  add('template', /(?:^|\n)\s*Template:[ \t]*/);
+  add('negativeTemplate', /(?:^|\n)\s*Negative Template:[ \t]*/);
+  add('params', /(?:^|\n)\s*Steps:[ \t]*/);
+  anchors.sort((a, b) => a.start - b.start);
+
+  const firstStart = anchors.length ? anchors[0].start : src.length;
+  out.positive = src.slice(0, firstStart).trim();
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    const end = i + 1 < anchors.length ? anchors[i + 1].start : src.length;
+    if (a.key === 'params') {
+      // Keep the "Steps:" label so parseParams captures it as a key.
+      out.params = parseParams(src.slice(a.labelStart, end).trim());
+    } else {
+      out[a.key] = src.slice(a.contentStart, end).trim();
+    }
+  }
+
+  // LoRA network names from <lora:NAME:weight> tags in the positive + template.
+  const loraRe = /<lora:([^:>]+)(?::[^>]*)?>/gi;
+  const names = new Set();
+  for (const text of [out.positive, out.template]) {
+    let m;
+    while ((m = loraRe.exec(text || '')) !== null) names.add(m[1].trim());
+  }
+  out.loras = [...names];
+  return out;
+}
+
+// Render prompt text, coloring <lora:…> tags and __wildcards__ differently.
+const TOKEN_RE = /(<lora:[^>]+>)|(__[^_\s][^_]*?__)/g;
+function highlightTokens(text) {
+  if (!text) return null;
+  const nodes = [];
+  let last = 0, m, key = 0;
+  while ((m = TOKEN_RE.exec(text)) !== null) {
+    if (m.index > last) nodes.push(text.slice(last, m.index));
+    if (m[1]) nodes.push(<span key={key++} className="tok-lora">{m[1]}</span>);
+    else nodes.push(<span key={key++} className="tok-wild">{m[2]}</span>);
+    last = TOKEN_RE.lastIndex;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
+// A collapsible, resizable prompt/template section with its own Copy button.
+// Collapse state is keyed by `skey` and persists across images.
+function PromptSection({ title, text, skey, defaultOpen = true, negative = false }) {
+  const [open, setOpen] = usePersistentState(`imgmgr.section.${skey}`, defaultOpen);
+  if (!text) return null;
+  return (
+    <div className="meta-section">
+      <div className="meta-section-title meta-section-title-row collapsible" onClick={() => setOpen(o => !o)}>
+        <span className="collapse-caret">{open ? '▾' : '▸'} {title}</span>
+        <CopyButton text={text} className="btn-copy-inline" title={`Copy ${title}`} />
+      </div>
+      {open && <pre className={`meta-prompt resizable ${negative ? 'meta-negative' : ''}`}>{highlightTokens(text)}</pre>}
+    </div>
+  );
+}
+
 function TagEditor({ imageId }) {
   const qc = useQueryClient();
   const { data: tags = [] } = useQuery({
@@ -76,6 +177,10 @@ function TagEditor({ imageId }) {
   );
 }
 
+// Metadata keys hidden from the EXIF table, and those already shown up top.
+const EXIF_HIDE = new Set(['ExifTag', 'Size', 'UserComment', 'parameters', 'Parameters']);
+const EXIF_PRIORITY_KEYS = new Set(['Model', 'Sampler', 'Steps', 'CFG scale', 'Seed']);
+
 function MetaPanel({ imageId, image }) {
   const { data: metaRows = [] } = useQuery({
     queryKey: ['metadata', imageId],
@@ -84,15 +189,40 @@ function MetaPanel({ imageId, image }) {
 
   const [copied, setCopied] = useState(false);
 
+  // The raw a1111 string (if embedded) is the authoritative source for the
+  // prompt / template / params — the DB columns can be polluted for some tools.
+  const source = metaRows.find(r => r.key === 'UserComment' || r.key === 'parameters' || r.key === 'Parameters')?.value || '';
+  const parsed = parseSource(source);
+  const positive = parsed.positive || image?.positive_prompt || '';
+  const negative = parsed.negative || image?.negative_prompt || '';
+  const template = parsed.template || '';
+  const negativeTemplate = parsed.negativeTemplate || '';
+  const templateText = template + (negativeTemplate ? `\n\nNegative Template:\n${negativeTemplate}` : '');
+  const params = parsed.params;
+  const unet = Object.entries(params).find(([k]) => /unet/i.test(k))?.[1] || '';
+
+  // Ordered "important" rows shown first in the EXIF table.
+  const priority = [
+    ['Model', params.Model],
+    ['Sampler', params.Sampler],
+    ['Steps', params.Steps],
+    ['CFG scale', params['CFG scale']],
+    ['UNET', unet],
+    ['LoRA networks', parsed.loras.join(', ')],
+    ['Seed', params.Seed],
+  ].filter(([, v]) => v);
+  const rest = metaRows.filter(r => !EXIF_HIDE.has(r.key) && !EXIF_PRIORITY_KEYS.has(r.key));
+
   const allText = [
     image ? `File: ${image.filename}` : '',
     image ? `Path: ${image.path}` : '',
     image ? `Dimensions: ${image.width} × ${image.height}` : '',
     image ? `Size: ${(image.size / 1024).toFixed(1)} KB` : '',
     image ? `Date: ${new Date(image.mtime).toLocaleString()}` : '',
-    image?.positive_prompt ? `\nPrompt:\n${image.positive_prompt}` : '',
-    image?.negative_prompt ? `\nNegative prompt:\n${image.negative_prompt}` : '',
-    metaRows.length ? `\nEXIF:\n${metaRows.map(r => `${r.key}: ${r.value}`).join('\n')}` : '',
+    positive ? `\nPrompt:\n${positive}` : '',
+    negative ? `\nNegative prompt:\n${negative}` : '',
+    templateText ? `\nTemplate:\n${templateText}` : '',
+    source ? `\nParameters:\n${source}` : '',
   ].filter(Boolean).join('\n');
 
   function copyAll() {
@@ -116,46 +246,34 @@ function MetaPanel({ imageId, image }) {
         </div>
       </div>
 
-      {image.positive_prompt && (
-        <div className="meta-section">
-          <div className="meta-section-title meta-section-title-row">
-            <span>Prompt</span>
-            <CopyButton text={image.positive_prompt} className="btn-copy-inline" title="Copy prompt" />
-          </div>
-          <pre className="meta-prompt">{image.positive_prompt}</pre>
-        </div>
-      )}
-
-      {image.negative_prompt && (
-        <div className="meta-section">
-          <div className="meta-section-title meta-section-title-row">
-            <span>Negative prompt</span>
-            <CopyButton text={image.negative_prompt} className="btn-copy-inline" title="Copy negative prompt" />
-          </div>
-          <pre className="meta-prompt meta-negative">{image.negative_prompt}</pre>
-        </div>
-      )}
-
       <TagEditor imageId={imageId} />
 
-      {metaRows.length > 0 && (
+      <PromptSection title="Prompt" text={positive} skey="prompt" />
+      <PromptSection title="Negative prompt" text={negative} skey="negative" negative />
+      <PromptSection title="Template" text={templateText} skey="template" />
+
+      {(priority.length > 0 || rest.length > 0) && (
         <div className="meta-section">
           <div className="meta-section-title">EXIF / Metadata</div>
           <div className="meta-table">
-            {metaRows.map(row => {
-              const isComment = row.key === 'UserComment';
-              const value = isComment
-                ? String(row.value).replace(/(Negative prompt:|Negative template:|Template:|Steps:)/g, '\n$1')
-                : row.value;
-              return (
-                <div key={row.key} className="meta-row">
-                  <span className="meta-key">{row.key}</span>
-                  <span className={`meta-value ${isComment ? 'meta-value-pre' : ''}`}>{value}</span>
-                </div>
-              );
-            })}
+            {priority.map(([k, v]) => (
+              <div key={`p-${k}`} className="meta-row meta-row-priority">
+                <span className="meta-key">{k}</span>
+                <span className="meta-value">{v}</span>
+              </div>
+            ))}
+            {rest.map((row, i) => (
+              <div key={`${row.key}-${i}`} className="meta-row">
+                <span className="meta-key">{row.key}</span>
+                <span className="meta-value">{row.value}</span>
+              </div>
+            ))}
           </div>
         </div>
+      )}
+
+      {source && (
+        <PromptSection title="UserComment (raw)" text={source} skey="usercomment" defaultOpen={false} />
       )}
 
       <div className="meta-copy-row">
@@ -234,6 +352,28 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
     return () => { document.body.style.overflow = ''; };
   }, []);
 
+  // Resizable metadata panel — width persists across images/sessions.
+  const [panelWidth, setPanelWidth] = usePersistentState('imgmgr.metaPanelWidth', 320);
+  const panelRef = useRef(null);
+  const startResize = useCallback((e) => {
+    e.preventDefault();
+    const rightEdge = panelRef.current ? panelRef.current.getBoundingClientRect().right : window.innerWidth;
+    const onMove = (ev) => {
+      const w = Math.max(240, Math.min(rightEdge - ev.clientX, window.innerWidth - 200));
+      setPanelWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [setPanelWidth]);
+
   return (
     <div className="viewer-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="viewer-container">
@@ -273,7 +413,10 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
             <div className="viewer-zoom-hint">{zoom ? 'Click to fit' : 'Click to zoom'}</div>
           </div>
 
-          <MetaPanel imageId={imageId} image={image} />
+          <div className="meta-resizer" onPointerDown={startResize} title="Drag to resize" />
+          <div className="meta-panel-wrap" ref={panelRef} style={{ width: `${panelWidth}px` }}>
+            <MetaPanel imageId={imageId} image={image} />
+          </div>
         </div>
       </div>
     </div>

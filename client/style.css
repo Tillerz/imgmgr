@@ -526,14 +526,27 @@ html, body, #root {
 }
 
 /* --- Meta panel -------------------------------------------- */
-.meta-panel {
-  width: 320px;
-  min-width: 260px;
-  max-width: 420px;
-  background: var(--bg-secondary);
-  border-left: 1px solid var(--border);
-  overflow-y: auto;
+/* Draggable divider to resize the metadata panel width. */
+.meta-resizer {
+  width: 6px;
   flex-shrink: 0;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 0.15s;
+}
+.meta-resizer:hover { background: var(--accent); }
+
+.meta-panel-wrap {
+  flex-shrink: 0;
+  height: 100%;
+  min-width: 240px;
+  display: flex;
+}
+
+.meta-panel {
+  width: 100%;
+  background: var(--bg-secondary);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -604,7 +617,28 @@ html, body, #root {
   max-height: 200px;
   overflow-y: auto;
 }
+/* Drag the bottom edge to resize an expanded prompt/template field. */
+.meta-prompt.resizable {
+  resize: vertical;
+  overflow: auto;
+  min-height: 44px;
+  max-height: none;
+  height: 130px;
+}
 .meta-negative { color: var(--text-secondary); }
+
+/* Collapsible section headers */
+.meta-section-title.collapsible { cursor: pointer; user-select: none; }
+.meta-section-title.collapsible:hover { color: var(--text-secondary); }
+.collapse-caret { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Highlighted tokens inside prompts */
+.tok-lora { color: #8ef0a0; }   /* <lora:…> — light green */
+.tok-wild { color: #5fd6e6; }   /* __wildcards__ — cyan */
+
+/* Emphasised generation-param rows at the top of the EXIF table */
+.meta-row-priority .meta-key { color: var(--text-secondary); font-weight: 600; }
+.meta-row-priority .meta-value { color: var(--text-primary); }
 
 .meta-table { display: flex; flex-direction: column; gap: 6px; }
 .meta-table .meta-row {
