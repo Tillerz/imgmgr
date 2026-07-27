@@ -905,6 +905,17 @@ html, body, #root {
 /* --- Bulk rate control ------------------------------------- */
 .bulk-rate { display: inline-flex; align-items: center; gap: 6px; }
 
+/* --- Similar-images threshold slider ----------------------- */
+.similar-threshold {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; color: var(--text-muted); cursor: pointer;
+}
+.similar-threshold input[type="range"] { width: 110px; cursor: pointer; }
+.similar-threshold-val {
+  min-width: 18px; text-align: center;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+
 /* --- Trash toggle + undo toast ----------------------------- */
 .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../api.js';
 import StarRating from './StarRating.jsx';
+import usePersistentState from '../usePersistentState.js';
 
 // Small button that copies `text` to the clipboard with brief "Copied!" feedback.
 function CopyButton({ text, className = '', label = 'Copy', title }) {
@@ -24,15 +25,6 @@ function CopyButton({ text, className = '', label = 'Copy', title }) {
 }
 
 // Collapse state persisted to localStorage so it carries across images/sessions.
-function usePersistentState(key, initial) {
-  const [v, setV] = useState(() => {
-    try { const s = localStorage.getItem(key); return s === null ? initial : JSON.parse(s); }
-    catch { return initial; }
-  });
-  useEffect(() => { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }, [key, v]);
-  return [v, setV];
-}
-
 // Parse a comma-separated "Steps: 30, Sampler: …, Model: …" params line.
 function parseParams(tail) {
   const out = {};

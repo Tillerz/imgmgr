@@ -17,7 +17,7 @@ export const api = {
     body: JSON.stringify({ ids, favorite: level }),
   }).then(json),
   metaValues: (key) => fetch('/api/images/meta/values?key=' + encodeURIComponent(key)).then(json),
-  similar: (id, threshold = 10) => fetch(`/api/images/${id}/similar?threshold=${threshold}`).then(json),
+  similar: (id, threshold = 14) => fetch(`/api/images/${id}/similar?threshold=${threshold}`).then(json),
   move: (ids, targetFolder) => fetch('/api/images/move', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids, targetFolder }),

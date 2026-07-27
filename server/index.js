@@ -5,7 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import { config, ROOT } from './config.js';
 import db from './db.js';
 import { runScan, isScanRunning } from './scanner.js';
-import { backfillGenParams } from './migrate.js';
+import { backfillGenParams, recomputePhashes } from './migrate.js';
 import { startWatcher } from './watcher.js';
 import imageRoutes from './routes/images.js';
 import folderRoutes from './routes/folders.js';
@@ -106,6 +106,11 @@ app.listen(config.port, () => {
     const bf = backfillGenParams();
     if (!bf.skipped) console.log(`Backfilled gen params: ${bf.rowsAdded} rows across ${bf.imagesUpdated} images`);
   } catch (e) { console.error('Gen-param backfill error:', e); }
+  // One-time perceptual-hash recompute after a pHash algorithm change. Runs in the
+  // background (reads every file) so it never blocks the server or the scan.
+  recomputePhashes(({ done, total }) => process.stdout.write(`\rRehashing ${done}/${total}...`))
+    .then((r) => { if (!r.skipped) console.log(`\npHash recompute: ${r.updated} updated, ${r.failed} failed`); })
+    .catch((e) => console.error('pHash recompute error:', e));
   if (config.scanOnStart) {
     console.log('Starting initial scan...');
     runScan(({ indexed }) => {

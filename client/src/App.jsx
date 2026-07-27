@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { api } from './api.js';
+import usePersistentState from './usePersistentState.js';
 import FolderTree from './components/FolderTree.jsx';
 import Toolbar from './components/Toolbar.jsx';
 import TileGrid from './components/TileGrid.jsx';
@@ -24,6 +25,7 @@ export default function App() {
   const [undo, setUndo] = useState(null); // { ids, count } — last soft-deleted batch
   const [facets, setFacets] = useState({}); // { Model: '…', Sampler: '…' }
   const [similarTo, setSimilarTo] = useState(null); // image id we're showing matches for
+  const [similarThreshold, setSimilarThreshold] = usePersistentState('imgmgr.similarThreshold', 14); // max hash distance for "similar"
   const lastClickedId = useRef(null);
 
   // SSE: listen for server-pushed change notifications
@@ -54,7 +56,7 @@ export default function App() {
     try {
       let data;
       if (similarTo) {
-        data = await api.similar(similarTo); // returns the whole match set, unpaginated
+        data = await api.similar(similarTo, similarThreshold); // returns the whole match set, unpaginated
       } else {
         const params = trashView
           ? { trashed: 1, limit: PAGE, offset: off }
@@ -75,7 +77,7 @@ export default function App() {
     } finally {
       if (myReq === reqIdRef.current) loadingRef.current = false;
     }
-  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView, facets, similarTo]);
+  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView, facets, similarTo, similarThreshold]);
 
   // Initial load and on filter change
   React.useEffect(() => {
@@ -305,6 +307,19 @@ export default function App() {
               <div className="toolbar">
                 <div className="toolbar-row toolbar-actions">
                   <span className="count-label">🔍 Visually similar images · {images.length} found</span>
+                  <label
+                    className="similar-threshold"
+                    title="How alike a match must be. Lower = stricter (only near-identical images); higher = looser (more matches, but less similar)."
+                  >
+                    <span>Strict</span>
+                    <input
+                      type="range" min="4" max="24" step="1"
+                      value={similarThreshold}
+                      onChange={e => setSimilarThreshold(Number(e.target.value))}
+                    />
+                    <span>Loose</span>
+                    <span className="similar-threshold-val">{similarThreshold}</span>
+                  </label>
                   <button className="btn btn-secondary btn-sm" onClick={() => setSimilarTo(null)}>← Back to all images</button>
                 </div>
               </div>

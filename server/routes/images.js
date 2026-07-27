@@ -242,7 +242,7 @@ router.delete('/:id/tags/:tag', (req, res) => {
 
 // Find visually similar images (perceptual hash within `threshold` bits)
 router.get('/:id/similar', (req, res) => {
-  const threshold = Math.max(0, Math.min(32, Number(req.query.threshold ?? 10)));
+  const threshold = Math.max(0, Math.min(32, Number(req.query.threshold ?? 14)));
   const limit = Math.max(1, Math.min(500, Number(req.query.limit ?? 200)));
   const target = db.prepare('SELECT phash FROM images WHERE id = ?').get(req.params.id);
   if (!target?.phash) return res.json({ images: [], total: 0 });
