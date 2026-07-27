@@ -116,6 +116,52 @@ function PromptSection({ title, text, skey, defaultOpen = true, negative = false
   );
 }
 
+// Collapsible "Caption" section. Shows the stored caption (if any) and a button
+// to (re)generate it via the SDNext VQA endpoint. Generation is slow, so the
+// button reflects an in-progress state and errors are surfaced inline.
+function CaptionSection({ imageId, caption }) {
+  const qc = useQueryClient();
+  const [open, setOpen] = usePersistentState('imgmgr.section.caption', true);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function generate() {
+    setLoading(true);
+    setError('');
+    try {
+      const r = await api.caption(imageId);
+      qc.setQueryData(['image', imageId], prev => (prev ? { ...prev, caption: r.caption } : prev));
+    } catch (e) {
+      setError(String(e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="meta-section">
+      <div className="meta-section-title meta-section-title-row collapsible" onClick={() => setOpen(o => !o)}>
+        <span className="collapse-caret">{open ? '▾' : '▸'} Caption</span>
+        {caption && <CopyButton text={caption} className="btn-copy-inline" title="Copy caption" />}
+      </div>
+      {open && (
+        <div className="caption-body">
+          {caption && <pre className="meta-prompt resizable">{caption}</pre>}
+          {error && <div className="caption-error">Captioning failed: {error}</div>}
+          <button
+            className="btn btn-secondary btn-xs"
+            onClick={generate}
+            disabled={loading}
+            title="Generate a caption with the SDNext VQA model"
+          >
+            {loading ? 'Captioning… (may take a while)' : caption ? '↻ Regenerate caption' : '✦ Generate caption'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TagEditor({ imageId }) {
   const qc = useQueryClient();
   const { data: tags = [] } = useQuery({
@@ -211,6 +257,7 @@ function MetaPanel({ imageId, image }) {
     image ? `Dimensions: ${image.width} × ${image.height}` : '',
     image ? `Size: ${(image.size / 1024).toFixed(1)} KB` : '',
     image ? `Date: ${new Date(image.mtime).toLocaleString()}` : '',
+    image?.caption ? `\nCaption:\n${image.caption}` : '',
     positive ? `\nPrompt:\n${positive}` : '',
     negative ? `\nNegative prompt:\n${negative}` : '',
     templateText ? `\nTemplate:\n${templateText}` : '',
@@ -243,6 +290,8 @@ function MetaPanel({ imageId, image }) {
       <PromptSection title="Prompt" text={positive} skey="prompt" />
       <PromptSection title="Negative prompt" text={negative} skey="negative" negative />
       <PromptSection title="Template" text={templateText} skey="template" />
+
+      <CaptionSection imageId={imageId} caption={image.caption} />
 
       {(priority.length > 0 || rest.length > 0) && (
         <div className="meta-section">

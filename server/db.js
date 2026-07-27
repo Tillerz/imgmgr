@@ -69,6 +69,7 @@ db.exec(`
 const imageCols = db.prepare('PRAGMA table_info(images)').all().map(c => c.name);
 if (!imageCols.includes('trashed_at'))    db.exec('ALTER TABLE images ADD COLUMN trashed_at INTEGER');
 if (!imageCols.includes('original_path')) db.exec('ALTER TABLE images ADD COLUMN original_path TEXT');
+if (!imageCols.includes('caption'))        db.exec('ALTER TABLE images ADD COLUMN caption TEXT');
 db.exec('CREATE INDEX IF NOT EXISTS idx_images_trashed ON images(trashed_at)');
 
 export default db;

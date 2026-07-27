@@ -916,6 +916,11 @@ html, body, #root {
   font-variant-numeric: tabular-nums; color: var(--text);
 }
 
+/* --- Caption section --------------------------------------- */
+.caption-body { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.caption-body .meta-prompt { width: 100%; }
+.caption-error { color: var(--danger, #e05a5a); font-size: 12px; }
+
 /* --- Trash toggle + undo toast ----------------------------- */
 .btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 

@@ -26,6 +26,7 @@ export default function App() {
   const [facets, setFacets] = useState({}); // { Model: '…', Sampler: '…' }
   const [similarTo, setSimilarTo] = useState(null); // image id we're showing matches for
   const [similarThreshold, setSimilarThreshold] = usePersistentState('imgmgr.similarThreshold', 14); // max hash distance for "similar"
+  const [captioning, setCaptioning] = useState(null); // { done, total } while bulk-captioning
   const lastClickedId = useRef(null);
 
   // SSE: listen for server-pushed change notifications
@@ -127,6 +128,24 @@ export default function App() {
     setImages(prev => prev.map(img => idSet.has(img.id) ? { ...img, favorite: level } : img));
     ids.forEach(id => qc.setQueryData(['image', id], prev => prev ? { ...prev, favorite: level } : prev));
   }, [selectedIds, qc]);
+
+  // Caption the selected images. VQA is heavy, so run one at a time client-side
+  // with live progress; each result is cached so open viewers update immediately.
+  const handleCaptionSelected = useCallback(async () => {
+    const ids = [...selectedIds];
+    if (!ids.length || captioning) return;
+    setCaptioning({ done: 0, total: ids.length });
+    let failed = 0;
+    for (let i = 0; i < ids.length; i++) {
+      try {
+        const r = await api.caption(ids[i]);
+        qc.setQueryData(['image', ids[i]], prev => (prev ? { ...prev, caption: r.caption } : prev));
+      } catch { failed++; }
+      setCaptioning({ done: i + 1, total: ids.length });
+    }
+    setCaptioning(null);
+    if (failed) alert(`Captioning finished with ${failed} error(s) out of ${ids.length}.`);
+  }, [selectedIds, captioning, qc]);
 
   // Show images visually similar to the given one (from the lightbox).
   const showSimilar = useCallback((id) => {
@@ -338,6 +357,8 @@ export default function App() {
                 total={total}
                 loaded={images.length}
                 onBulkRate={handleBulkRate}
+                onCaptionSelected={handleCaptionSelected}
+                captioning={captioning}
                 onSelectAll={async () => {
                   const ids = await api.imageIds({
                     folder: currentFolder,

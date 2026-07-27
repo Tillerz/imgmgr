@@ -46,6 +46,8 @@ export default function Toolbar({
   onSelectAll, onDeselectAll,
   onDeleteSelected,
   onBulkRate,
+  onCaptionSelected,
+  captioning,
   currentFolder,
   onMoveToFolder,
   onBulkTag,
@@ -83,8 +85,8 @@ export default function Toolbar({
         <input
           className="search-input"
           type="search"
-          placeholder="Search… (e.g. sunset -blurry &quot;close up&quot;)"
-          title={'Space = AND, -term excludes, "quote" for phrases.\nExample: sunset beach -blurry "close up"'}
+          placeholder="Search… (e.g. sunset -blurry &quot;close up&quot; caption:castle)"
+          title={'Space = AND, -term excludes, "quote" for phrases.\nSearches filename + prompt by default.\nPrefix a term to target one field: caption:, prompt:, name:\nExamples: sunset beach -blurry "close up"  •  caption:"golden hour"  •  dog -caption:cartoon'}
           value={search}
           onChange={e => onSearch(e.target.value)}
         />
@@ -224,6 +226,15 @@ export default function Toolbar({
                 </div>
               )}
             </div>
+
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={onCaptionSelected}
+              disabled={!!captioning}
+              title="Generate captions for the selected images via SDNext (slow)"
+            >
+              {captioning ? `Captioning ${captioning.done}/${captioning.total}…` : `✦ Caption ${selectedCount}`}
+            </button>
 
             <button className="btn btn-danger btn-sm" onClick={onDeleteSelected}>
               Delete {selectedCount}

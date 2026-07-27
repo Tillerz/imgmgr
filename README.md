@@ -20,13 +20,14 @@ A browser-based image manager built for large collections of AI-generated images
 - **Delete protection** — starred images can't be deleted from any view
 - **Multi-select** — select images, then move to a folder, delete, tag, or **bulk-rate** them
 - **Metadata facet filters** — filter by **Model**, **Sampler**, or **Steps** dropdowns (extracted from the SD generation parameters), combinable with search and folders
-- **Find similar** — from the lightbox, discover visually similar images using the perceptual hash
+- **Find similar** — from the lightbox, discover visually similar images using a DCT-based perceptual hash, with an adjustable strictness slider
+- **AI captions (VQA)** — generate a natural-language caption for a single image or a whole selection via an [SDNext](https://github.com/vladmandic/sdnext) server; captions are stored in the database and separately searchable
 - **Duplicate finder** — three modes:
   - *Exact* — identical file content (MD5 hash)
-  - *Visual* — perceptually similar images (dHash, slow!)
+  - *Visual* — perceptually similar images (perceptual hash, slow!)
   - *Seed* — same generation seed in the filename (might match non-similar images!)
 - **Live updates** — watches today's output folder via SSE; a banner appears when new images arrive
-- **Metadata search** — filter by filename, prompt text, or arbitrary EXIF key/value, with multi-term AND, exclusions (`-term`), and quoted phrases
+- **Metadata search** — filter by filename, prompt text, or arbitrary EXIF key/value, with multi-term AND, exclusions (`-term`), and quoted phrases; target a single field with `caption:` / `prompt:` / `name:` prefixes
 - Reads SD metadata from PNG `tEXt` chunks and WebP/JPEG EXIF (positive prompt, negative prompt, seed, steps, etc.)
 
 ## Requirements
@@ -59,7 +60,9 @@ Edit `config.json` to point at your image root:
   "supportedExtensions": ["png", "webp", "jpg", "jpeg"],
   "scanOnStart": true,
   "watchForChanges": false,
-  "watchInterval": 5000
+  "watchInterval": 5000,
+  "sdnextUrl": "http://127.0.0.1:7860",
+  "captionModel": "Google Gemma 3 4B"
 }
 ```
 
@@ -74,6 +77,10 @@ Edit `config.json` to point at your image root:
 | `watchForChanges` | `false` | Enable live file watching |
 | `watchInterval` | `5000` | Polling interval in ms (used on DrvFs/WSL2 mounts) |
 | `trashDirName` | `trash` | Sub-directory of `cacheDir` where deleted images are moved (recoverable) |
+| `sdnextUrl` | `http://127.0.0.1:7860` | SDNext server used for AI captioning (its `/sdapi/v1/vqa` endpoint) |
+| `captionModel` | `Google Gemma 3 4B` | VQA model name requested for captions (must exist on the SDNext server) |
+| `captionQuestion` | `describe the image` | Prompt/question sent to the caption model |
+| `captionSystem` | *(see `config.js`)* | System prompt sent to the caption model |
 
 ## Running
 
@@ -121,11 +128,15 @@ The search bar matches against both the **filename** and the **positive prompt**
 | `"close up"` | contain the exact phrase `close up` |
 | `"close up" -blurry` | contain the phrase `close up` but not `blurry` |
 | `castle + dragon - modern` | contain `castle` **and** `dragon`, but **not** `modern` |
+| `caption:castle` | have `castle` in the **caption** only |
+| `caption:"golden hour"` | have the phrase `golden hour` in the caption |
+| `dog -caption:cartoon` | match `dog` (filename/prompt) but exclude `cartoon` captions |
 
 - **Space means AND** — every included term must be present.
 - **`-` excludes** a term. It works attached (`-blurry`) or spaced (`- blurry`), and can be combined with quotes (`-"low quality"`).
 - **`+` is optional** and simply marks an included term; a plain space already implies it.
 - **Quotes** group multiple words into a single phrase. Without quotes, each word is matched independently.
+- **Field prefixes** restrict a single term to one field: `caption:`, `prompt:`, or `name:` (alias `file:`). Unprefixed terms search filename + prompt as usual, and [captions](#ai-captions) are searched **only** when you explicitly write `caption:`, so they never dilute an ordinary prompt search. An unrecognised prefix (e.g. `steps:30`) is treated as a literal term.
 - Terms are matched literally, so wildcard characters (`%`, `_`) and hyphenated words like `close-up` are treated as-is.
 
 ### Viewing an image
@@ -135,6 +146,7 @@ Click any thumbnail to open the lightbox. The right panel shows:
 - **Tags** (add/remove them right at the top)
 - Dimensions, size, date, and folder
 - **Prompt**, **Negative prompt**, and **Template** sections, each with its own **Copy** button
+- A collapsible **Caption** section with a **Generate caption** button (see [AI captions](#ai-captions))
 - **EXIF / Metadata** — the generation params come first in a fixed order (**Model, Sampler, Steps, CFG scale, UNET, LoRA networks, Seed**), then everything else
 - A collapsed **UserComment (raw)** section holding the unparsed metadata string
 - Star rating control (top bar)
@@ -167,7 +179,20 @@ Each prompt section (Prompt, Negative prompt, Template) has its own **Copy** but
 
 ### Find similar images
 
-Open any image in the lightbox and click **🔍 Similar** in the top bar. imgmgr compares the image's perceptual hash (dHash) against the whole library and shows every visually similar image, nearest first. A banner indicates you're in similar-search mode — click **← Back to all images** to return. This reuses the same hashing that powers the duplicate finder, so it's essentially free.
+Open any image in the lightbox and click **🔍 Similar** in the top bar. imgmgr compares the image's perceptual hash against the whole library and shows every visually similar image, nearest first. A banner indicates you're in similar-search mode — click **← Back to all images** to return.
+
+The hash is a **DCT-based pHash** (a 2-D discrete cosine transform of the image, thresholded against its median) that keys on overall composition rather than fine pixel detail — well suited to spotting different seeds of the same prompt. The banner also has a **Strict ↔ Loose** slider that adjusts the match threshold: drag toward *Strict* for near-identical images only, or toward *Loose* to include looser compositional matches. Your setting is remembered across sessions.
+
+### AI captions
+
+imgmgr can generate a natural-language caption for an image by sending it to an [SDNext](https://github.com/vladmandic/sdnext) server's vision endpoint (`/sdapi/v1/vqa`). Point `sdnextUrl` at your running SDNext instance and pick a `captionModel` in `config.json` (see the [config table](#setup)); the model must be available on that server.
+
+- **Single image** — open the lightbox and expand the **Caption** section in the sidebar, then click **✦ Generate caption**. The result is saved and shown there (collapsible, with its own **Copy** button); use **↻ Regenerate caption** to replace it.
+- **Many images** — select images in the grid and click **✦ Caption N** in the toolbar. They're captioned one at a time with a live `Captioning 3/12…` progress indicator; each caption is stored as it completes.
+
+Captions are stored in the database and can be searched with the `caption:` prefix in the search bar (see [Search syntax](#search-syntax)) — for example `caption:"stone bridge"`.
+
+> **Note:** captioning is a heavy operation on the SDNext side. The first request after the model loads can take a minute or so; subsequent ones are faster. imgmgr downscales each image before sending it to keep the request small.
 
 ### Rating images
 
@@ -177,7 +202,7 @@ Click the stars in the lightbox sidebar, hover a tile and use the star overlay d
 
 - Click the **checkbox button** in the top-left corner of a tile to select it (or click again to deselect).
 - Use **All** / **None** in the toolbar to select or clear the whole page.
-- With images selected, **Rate:** sets a star rating on all of them, **Move N →** opens a folder picker, **Tag N →** adds/removes a tag, and **Delete N** moves them to the trash.
+- With images selected, **Rate:** sets a star rating on all of them, **Move N →** opens a folder picker, **Tag N →** adds/removes a tag, **✦ Caption N** generates captions for the whole selection (see [AI captions](#ai-captions)), and **Delete N** moves them to the trash.
 
 > **Starred images are protected from deletion.** Any image with a rating of 1★ or higher is refused by the delete routes — in bulk delete, the lightbox `Del` shortcut, and the duplicate finder alike. You'll see a notice reporting how many were skipped; remove the stars first if you really want to delete them.
 
@@ -200,7 +225,7 @@ Click **Duplicates** in the toolbar to open the duplicate panel.
 | Mode | How it works |
 |------|-------------|
 | **Exact** | Groups images with identical MD5 file hashes |
-| **Visual** | Groups images whose perceptual hash (dHash) differs by ≤ 8 bits |
+| **Visual** | Groups images whose perceptual hash (DCT-based pHash) differs by ≤ 8 bits |
 | **Seed** | Groups images sharing the same generation seed (last number in the filename, e.g. `00042-1827738702.png`) |
 
 Selection spans every group at once. Use the action bar at the top of the panel to **Keep oldest in all, select rest** (across all groups), **Clear**, or **Delete N selected** — so you can clean up every folder's duplicates in one pass instead of group by group. Each group also has its own **Keep oldest, select rest** button, and you can click individual tiles to fine-tune the selection. Deletions go to the trash, so they're recoverable.
@@ -256,16 +281,17 @@ imgmgr/
 │   ├── index.js          # Express app, Vite middleware, SSE endpoint
 │   ├── config.js         # Loads config.json, derives TRASH_DIR
 │   ├── db.js             # SQLite schema, migrations, connection
-│   ├── migrate.js        # One-time backfill of generation-param facets
+│   ├── migrate.js        # One-time backfills (gen-param facets, pHash recompute)
 │   ├── scanner.js        # Full directory scan + file indexing
 │   ├── meta.js           # PNG tEXt / WebP+JPEG EXIF + gen-param extraction
-│   ├── thumbnails.js     # Sharp thumbnail generation, pHash, file hash
+│   ├── thumbnails.js     # Sharp thumbnail generation, DCT pHash, file hash
+│   ├── caption.js        # AI captioning via the SDNext VQA endpoint
 │   ├── duplicates.js     # Exact / perceptual / seed duplicate detection
 │   ├── trash.js          # Soft-delete: trash / restore / purge
 │   ├── watcher.js        # Chokidar file watcher (today's folder only)
 │   ├── events.js         # SSE broadcast utility
 │   └── routes/
-│       ├── images.js     # Image list/filter, ratings, tags, trash, facets, similar
+│       ├── images.js     # Image list/filter, ratings, tags, trash, facets, similar, caption
 │       ├── folders.js    # Folder listing and creation
 │       ├── duplicates.js # Duplicate find and delete endpoints
 │       └── tags.js       # Global tag listing and bulk add/remove
@@ -273,6 +299,7 @@ imgmgr/
 │   ├── src/
 │   │   ├── App.jsx       # Root component, state, SSE hook
 │   │   ├── api.js        # fetch wrappers for all API endpoints
+│   │   ├── usePersistentState.js  # localStorage-backed useState hook
 │   │   └── components/
 │   │       ├── Toolbar.jsx
 │   │       ├── FolderTree.jsx

@@ -5,17 +5,25 @@ import { join, dirname } from 'path';
 import db from '../db.js';
 import { trashImages, restoreImages, purgeImages } from '../trash.js';
 import { hammingDistance } from '../thumbnails.js';
+import { captionImage } from '../caption.js';
 
 const router = Router();
+
+// Search fields that can be targeted with a `field:term` prefix. Unprefixed
+// terms search the default set (filename + positive prompt). Captions are
+// opt-in via `caption:` so they never dilute ordinary prompt searches.
+const SEARCH_FIELDS = { caption: 'caption', prompt: 'positive_prompt', name: 'filename', file: 'filename' };
 
 // Parse a search string into include/exclude terms.
 //   space = AND (all include terms must match)
 //   -term = exclude       "quoted phrase" = literal phrase (may span spaces)
+//   field:term / field:"phrase" restricts a term to one field (see SEARCH_FIELDS)
 // The '-'/'+' operator may be attached (-blurry) or spaced (- blurry / - "low
 // quality"); a spaced operator applies to the next term. It only acts as an
 // operator at a term boundary, so words like "close-up" stay intact.
+// Each returned term is { term, field } where field is a SEARCH_FIELDS key or null.
 export function parseSearchTerms(search) {
-  const tokens = search.match(/[+-]?"[^"]*"|\S+/g) || [];
+  const tokens = search.match(/[+-]?(?:[A-Za-z]+:)?"[^"]*"|\S+/g) || [];
   const include = [];
   const exclude = [];
   let pendingNeg = false; // a standalone -/+ applies to the following term
@@ -26,10 +34,16 @@ export function parseSearchTerms(search) {
     pendingNeg = false;
     if (tok[0] === '-') { neg = true; tok = tok.slice(1); }
     else if (tok[0] === '+') { tok = tok.slice(1); }
+    // Optional field prefix, e.g. caption:sunset or caption:"golden hour". Only
+    // recognised field names are treated as a prefix; anything else (steps:30) is
+    // kept literal so existing searches don't change meaning.
+    let field = null;
+    const fm = tok.match(/^([A-Za-z]+):([\s\S]*)$/);
+    if (fm && SEARCH_FIELDS[fm[1].toLowerCase()]) { field = fm[1].toLowerCase(); tok = fm[2]; }
     if (tok[0] === '"' && tok[tok.length - 1] === '"') tok = tok.slice(1, -1);
     tok = tok.trim();
     if (!tok) continue;
-    (neg ? exclude : include).push(tok);
+    (neg ? exclude : include).push({ term: tok, field });
   }
   return { include, exclude };
 }
@@ -37,21 +51,27 @@ export function parseSearchTerms(search) {
 // Escape LIKE wildcards so underscores/percents in prompts match literally.
 const likeEscape = s => s.replace(/[\\%_]/g, c => '\\' + c);
 
-// Build a WHERE fragment matching filename/positive_prompt against the parsed
-// terms. `col` is the column prefix ('' or 'i.'). Returns { clause, params }.
+// Build a WHERE fragment matching the parsed terms. A term with no field prefix
+// matches filename OR positive_prompt (unchanged default); a `field:` term
+// matches just that column. `col` is the column prefix ('' or 'i.').
 export function buildSearchClause(search, col = '') {
   const { include, exclude } = parseSearchTerms(search);
-  const fname = `${col}filename`;
-  const prompt = `COALESCE(${col}positive_prompt, '')`;
+  // Columns a term applies to, given its field (null = default set).
+  const colsFor = (field) => {
+    if (field) return [`COALESCE(${col}${SEARCH_FIELDS[field]}, '')`];
+    return [`${col}filename`, `COALESCE(${col}positive_prompt, '')`];
+  };
   const clauses = [];
   const params = [];
-  for (const term of include) {
-    clauses.push(`(${fname} LIKE ? ESCAPE '\\' OR ${prompt} LIKE ? ESCAPE '\\')`);
-    params.push(`%${likeEscape(term)}%`, `%${likeEscape(term)}%`);
+  for (const { term, field } of include) {
+    const exprs = colsFor(field);
+    clauses.push('(' + exprs.map(e => `${e} LIKE ? ESCAPE '\\'`).join(' OR ') + ')');
+    for (let i = 0; i < exprs.length; i++) params.push(`%${likeEscape(term)}%`);
   }
-  for (const term of exclude) {
-    clauses.push(`(${fname} NOT LIKE ? ESCAPE '\\' AND ${prompt} NOT LIKE ? ESCAPE '\\')`);
-    params.push(`%${likeEscape(term)}%`, `%${likeEscape(term)}%`);
+  for (const { term, field } of exclude) {
+    const exprs = colsFor(field);
+    clauses.push('(' + exprs.map(e => `${e} NOT LIKE ? ESCAPE '\\'`).join(' AND ') + ')');
+    for (let i = 0; i < exprs.length; i++) params.push(`%${likeEscape(term)}%`);
   }
   return { clause: clauses.join(' AND '), params };
 }
@@ -219,6 +239,20 @@ router.get('/:id', (req, res) => {
   const img = db.prepare('SELECT * FROM images WHERE id = ?').get(req.params.id);
   if (!img) return res.status(404).json({ error: 'not found' });
   res.json(img);
+});
+
+// Generate (and store) an image caption via the SDNext VQA endpoint. Slow —
+// the request stays open for the duration of the VLM inference.
+router.post('/:id/caption', async (req, res) => {
+  const img = db.prepare('SELECT id, path FROM images WHERE id = ?').get(req.params.id);
+  if (!img) return res.status(404).json({ error: 'not found' });
+  try {
+    const caption = await captionImage(img.path, req.body || {});
+    db.prepare('UPDATE images SET caption = ? WHERE id = ?').run(caption, img.id);
+    res.json({ ok: true, id: img.id, caption });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
 });
 
 // Tags for an image

@@ -34,7 +34,7 @@ List images with filtering, sorting, and pagination.
 | `folder` | — | Restrict to an exact `folder_path`. |
 | `sort` | `mtime-desc` | One of `mtime-desc`, `mtime-asc`, `name-asc`, `name-desc`, `fav-desc`, `fav-asc`. |
 | `favorite_min` | `0` | Only images with `favorite >= this`. |
-| `search` | — | Full-text filter over filename + positive prompt. See [Search syntax](#search-syntax). |
+| `search` | — | Text filter over filename + positive prompt (captions via a `caption:` prefix). See [Search syntax](#search-syntax). |
 | `tag` | — | Only images carrying this tag. |
 | `facets` | — | JSON object of generation-param filters, e.g. `{"Model":"x","Sampler":"Euler a"}`. Multiple keys are ANDed. See [Facets](#facets). |
 | `trashed` | — | `1` to list **only** trashed images (ignores `folder`/`favorite_min`, sorted by trash time). Omit for normal results. |
@@ -281,8 +281,8 @@ Read-only subset of the server config the client needs.
 
 ## Search syntax
 
-The `search` parameter matches against **filename** and **positive prompt** and
-supports multiple terms, exclusions, and phrases:
+By default the `search` parameter matches against **filename** and **positive
+prompt**. It supports multiple terms, exclusions, phrases, and per-field prefixes:
 
 | Example | Meaning |
 | --- | --- |
@@ -290,6 +290,15 @@ supports multiple terms, exclusions, and phrases:
 | `sunset -beach` | contains `sunset` but **not** `beach` |
 | `"close up"` | the exact phrase `close up` |
 | `castle -"low quality"` | `castle`, excluding the phrase `low quality` |
+| `caption:castle` | `castle` in the **caption** only |
+| `caption:"golden hour"` | the phrase `golden hour` in the caption |
+| `dog -caption:cartoon` | `dog` (filename/prompt), excluding `cartoon` captions |
+| `prompt:sunset` / `name:00012` | restrict a term to the prompt / filename |
+
+**Field prefixes** (`field:term` or `field:"phrase"`) restrict a single term to
+one field: `caption`, `prompt`, `name` (alias `file`). Captions are searched
+**only** when explicitly prefixed, so they never dilute ordinary prompt searches.
+An unrecognised prefix (e.g. `steps:30`) is treated as a literal term.
 
 The `-` operator works attached (`-blurry`) or spaced (`- blurry`). Wildcard
 characters (`%`, `_`) are matched literally.

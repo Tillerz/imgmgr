@@ -80,7 +80,7 @@ app.get('/api/events', (req, res) => {
 
 // Config endpoint (read-only, for client to know imageRoot etc.)
 app.get('/api/config', (req, res) => {
-  res.json({ imageRoot: config.imageRoot, thumbnailSize: config.thumbnailSize });
+  res.json({ imageRoot: config.imageRoot, thumbnailSize: config.thumbnailSize, sdnextUrl: config.sdnextUrl, captionModel: config.captionModel });
 });
 
 // Serve client: Vite middleware in dev, static dist/ in production
