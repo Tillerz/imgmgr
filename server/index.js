@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { createServer as createViteServer } from 'vite';
@@ -17,7 +16,15 @@ import { addClient, broadcast } from './events.js';
 
 const app = express();
 
-app.use(cors());
+// Minimal CORS: allow any origin (server is intended for local, trusted use).
+// Replaces the `cors` package to keep the dependency tree small.
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
 app.use(express.json());
 
 // Thumbnail route (short-circuit before other routes for performance)
