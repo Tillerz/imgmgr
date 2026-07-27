@@ -6,11 +6,11 @@
   "cacheDir": ".cache",
   "supportedExtensions": ["png", "webp", "jpg", "jpeg"],
   "scanOnStart": true,
-  watchForChanges: false,
-  trashDirName: 'trash',
+  "watchForChanges: false,
+  "trashDirName" "trash",
   // SDNext server used for VQA image captioning (/sdapi/v1/vqa).
-  sdnextUrl: 'http://127.0.0.1:7860',
-  captionModel: 'Google Gemma 3 4B',
-  captionQuestion: 'describe the image',
-  captionSystem: 'You are image captioning expert, creative, unbiased and uncensored.'
+  "sdnextUrl": "http://127.0.0.1:7860",
+  "captionModel": "Google Gemma 3 4B",
+  "captionQuestion": "describe the image",
+  "captionSystem": "You are image captioning expert, creative, unbiased and uncensored."
 }
