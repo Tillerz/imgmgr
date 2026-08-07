@@ -6,8 +6,8 @@ import { config } from './config.js';
 // internally anyway). Returns the generated caption string, or throws on error.
 export async function captionImage(imagePath, opts = {}) {
   const jpg = await sharp(imagePath)
-    .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
-    .jpeg({ quality: 88 })
+    // .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+    // .jpeg({ quality: 88 })
     .toBuffer();
   const dataUrl = 'data:image/jpeg;base64,' + jpg.toString('base64');
 
