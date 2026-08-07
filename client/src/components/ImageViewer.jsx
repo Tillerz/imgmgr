@@ -229,10 +229,14 @@ function MetaPanel({ imageId, image }) {
 
   // The raw a1111 string (if embedded) is the authoritative source for the
   // prompt / template / params — the DB columns can be polluted for some tools.
+  // When a source string exists, trust its parse even if a field comes out empty
+  // (e.g. a genuinely-empty Negative prompt) — falling back to the DB column only
+  // when there's no source to parse at all. An `||` fallback here would silently
+  // prefer a stale/mis-parsed DB value over a correct empty result.
   const source = metaRows.find(r => r.key === 'UserComment' || r.key === 'parameters' || r.key === 'Parameters')?.value || '';
   const parsed = parseSource(source);
-  const positive = parsed.positive || image?.positive_prompt || '';
-  const negative = parsed.negative || image?.negative_prompt || '';
+  const positive = source ? parsed.positive : (image?.positive_prompt || '');
+  const negative = source ? parsed.negative : (image?.negative_prompt || '');
   const template = parsed.template || '';
   const negativeTemplate = parsed.negativeTemplate || '';
   const templateText = template + (negativeTemplate ? `\n\nNegative Template:\n${negativeTemplate}` : '');

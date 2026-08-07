@@ -7,6 +7,14 @@ import { getImageInfo, computeFileHash, computePHash, ensureThumbnail } from './
 
 const EXT_RE = new RegExp(`\\.(${config.supportedExtensions.join('|')})$`, 'i');
 
+// Max length of a single metadata value we'll store. Raw SD parameter strings
+// (prompt + negative + template + params, all in one UserComment) routinely run
+// several KB for detailed prompts — this used to be capped at 4096, which
+// silently dropped the whole UserComment for long prompts, breaking the
+// client's authoritative re-parse and leaving it stuck on the (possibly
+// mis-parsed) DB columns. This still guards against pathological/binary blobs.
+export const META_VALUE_MAX_LEN = 100_000;
+
 let scanRunning = false;
 export function isScanRunning() { return scanRunning; }
 
@@ -77,7 +85,7 @@ export async function indexFile(filePath) {
   for (const [key, val] of Object.entries(rawMeta)) {
     if (val == null) continue;
     const strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
-    if (strVal.length < 4096) insertMeta.run(imageId, key, strVal);
+    if (strVal.length < META_VALUE_MAX_LEN) insertMeta.run(imageId, key, strVal);
   }
 }
 

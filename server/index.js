@@ -5,7 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import { config, ROOT } from './config.js';
 import db from './db.js';
 import { runScan, isScanRunning } from './scanner.js';
-import { backfillGenParams, recomputePhashes } from './migrate.js';
+import { backfillGenParams, recomputePhashes, recomputePrompts } from './migrate.js';
 import { startWatcher } from './watcher.js';
 import imageRoutes from './routes/images.js';
 import folderRoutes from './routes/folders.js';
@@ -111,6 +111,13 @@ app.listen(config.port, () => {
   recomputePhashes(({ done, total }) => process.stdout.write(`\rRehashing ${done}/${total}...`))
     .then((r) => { if (!r.skipped) console.log(`\npHash recompute: ${r.updated} updated, ${r.failed} failed`); })
     .catch((e) => console.error('pHash recompute error:', e));
+  // One-time re-extraction of prompt/negative-prompt/raw metadata after fixing a
+  // parser bug that could swallow a Template section into "negative" (and a
+  // storage cap that could drop long UserComment strings entirely). Background,
+  // non-blocking — see recomputePrompts in migrate.js.
+  recomputePrompts(({ done, total }) => process.stdout.write(`\rFixing prompts ${done}/${total}...`))
+    .then((r) => { if (!r.skipped) console.log(`\nPrompt fix: ${r.updated} updated, ${r.failed} failed`); })
+    .catch((e) => console.error('Prompt fix error:', e));
   if (config.scanOnStart) {
     console.log('Starting initial scan...');
     runScan(({ indexed }) => {

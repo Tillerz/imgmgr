@@ -1,6 +1,11 @@
 import db from './db.js';
-import { parseGenerationParams, GEN_PARAM_KEYS } from './meta.js';
+import { parseGenerationParams, GEN_PARAM_KEYS, extractMetadata } from './meta.js';
 import { computePHash, PHASH_VERSION } from './thumbnails.js';
+import { META_VALUE_MAX_LEN } from './scanner.js';
+
+// Bump whenever parseSDParameters (in meta.js) or the metadata storage cap
+// changes in a way that could fix previously mis-extracted data.
+const PROMPT_FIX_VERSION = 1;
 
 // One-time backfill: existing images stored the SD parameters as one big
 // UserComment/parameters string. Parse out discrete facet keys (Model, Sampler,
@@ -63,6 +68,54 @@ export async function recomputePhashes(onProgress) {
     "INSERT INTO app_meta (key, value) VALUES ('phash_version', ?) " +
     'ON CONFLICT(key) DO UPDATE SET value = excluded.value'
   ).run(String(PHASH_VERSION));
+
+  return { total: rows.length, updated, failed };
+}
+
+// One-time re-extraction of metadata for every image, to fix two compounding
+// bugs: (1) parseSDParameters used to swallow an entire Template section into
+// "negative" when the Negative prompt was empty, polluting positive_prompt /
+// negative_prompt; (2) the metadata table used to drop any raw value over 4096
+// chars, silently discarding long UserComment strings (common with detailed
+// prompts) and leaving the client with no source to re-parse from. Re-reads
+// each file (fast — EXIF/tEXt parsing only, no image decode) and rewrites both
+// the images.positive_prompt/negative_prompt columns and the raw metadata rows.
+// Guarded by `prompt_fix_version`; only runs once (again if bumped further).
+export async function recomputePrompts(onProgress) {
+  db.prepare('CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)').run();
+  const cur = Number(
+    db.prepare("SELECT value FROM app_meta WHERE key = 'prompt_fix_version'").get()?.value ?? 0
+  );
+  if (cur >= PROMPT_FIX_VERSION) return { skipped: true, version: cur };
+
+  const rows = db.prepare('SELECT id, path FROM images').all();
+  const updateImage = db.prepare('UPDATE images SET positive_prompt = ?, negative_prompt = ? WHERE id = ?');
+  const deleteMeta = db.prepare('DELETE FROM metadata WHERE image_id = ?');
+  const insertMeta = db.prepare('INSERT INTO metadata (image_id, key, value) VALUES (?, ?, ?)');
+  const applyOne = db.transaction((imageId, meta) => {
+    updateImage.run(meta.positive_prompt || null, meta.negative_prompt || null, imageId);
+    deleteMeta.run(imageId);
+    for (const [key, val] of Object.entries(meta.raw || {})) {
+      if (val == null) continue;
+      const strVal = typeof val === 'object' ? JSON.stringify(val) : String(val);
+      if (strVal.length < META_VALUE_MAX_LEN) insertMeta.run(imageId, key, strVal);
+    }
+  });
+
+  let done = 0, updated = 0, failed = 0;
+  for (const r of rows) {
+    try {
+      const meta = await extractMetadata(r.path);
+      applyOne(r.id, meta);
+      updated++;
+    } catch { failed++; }
+    if (++done % 1000 === 0) onProgress?.({ done, total: rows.length });
+  }
+
+  db.prepare(
+    "INSERT INTO app_meta (key, value) VALUES ('prompt_fix_version', ?) " +
+    'ON CONFLICT(key) DO UPDATE SET value = excluded.value'
+  ).run(String(PROMPT_FIX_VERSION));
 
   return { total: rows.length, updated, failed };
 }

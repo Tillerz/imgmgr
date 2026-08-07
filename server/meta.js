@@ -100,8 +100,12 @@ export function parseSDParameters(raw) {
   }
   const positive = raw.slice(0, negIdx).trim();
   const afterNeg = raw.slice(negIdx + negMarker.length);
-  const paramLine = afterNeg.search(/\n\s*Steps\s*:/i);
-  const negative = paramLine === -1 ? afterNeg.trim() : afterNeg.slice(0, paramLine).trim();
+  // The negative prompt ends at whichever comes first: the params line ("Steps:"),
+  // a Template section, or a Negative Template section. Some tools emit an empty
+  // Negative prompt immediately followed by one of these — without this, the
+  // whole Template text gets swallowed into "negative".
+  const boundary = afterNeg.search(/\n\s*(?:Steps\s*:|Template\s*:|Negative Template\s*:)/i);
+  const negative = boundary === -1 ? afterNeg.trim() : afterNeg.slice(0, boundary).trim();
   return { positive, negative };
 }
 
