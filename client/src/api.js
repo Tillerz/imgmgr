@@ -21,6 +21,11 @@ export const api = {
   caption: (id) => fetch(`/api/images/${id}/caption`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
   }).then(json),
+  missingCount: () => fetch('/api/images/missing/count').then(json),
+  purgeMissing: (ids) => fetch('/api/images/missing', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: ids || [] }),
+  }).then(json),
   move: (ids, targetFolder) => fetch('/api/images/move', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ids, targetFolder }),

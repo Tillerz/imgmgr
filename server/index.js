@@ -32,18 +32,27 @@ app.get('/api/thumb/:id', async (req, res) => {
   const img = db.prepare('SELECT path, file_hash FROM images WHERE id = ?').get(req.params.id);
   if (!img) return res.status(404).end();
   try {
+    // Thumbnails are cached by content hash, so an offline original still
+    // renders from cache — ensureThumbnail only touches the source file when
+    // no thumbnail exists yet.
     const tp = await ensureThumbnail(img.path, img.file_hash);
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.sendFile(tp);
   } catch {
-    res.status(500).end();
+    // Source is unavailable and nothing was cached.
+    res.status(404).end();
   }
 });
 
 // Full image route
 app.get('/api/full/:id', (req, res) => {
-  const img = db.prepare('SELECT path FROM images WHERE id = ?').get(req.params.id);
+  const img = db.prepare('SELECT path, missing_at FROM images WHERE id = ?').get(req.params.id);
   if (!img) return res.status(404).end();
+  // The original can't be served from cache, so say plainly that it's offline
+  // rather than letting sendFile fail with a generic error.
+  if (img.missing_at != null || !existsSync(img.path)) {
+    return res.status(410).json({ error: 'file offline', path: img.path });
+  }
   res.setHeader('Cache-Control', 'public, max-age=3600');
   res.sendFile(img.path);
 });
@@ -120,9 +129,13 @@ app.listen(config.port, () => {
     .catch((e) => console.error('Prompt fix error:', e));
   if (config.scanOnStart) {
     console.log('Starting initial scan...');
-    runScan(({ indexed }) => {
-      if (indexed % 50 === 0) process.stdout.write(`\rIndexed ${indexed} images...`);
+    runScan(({ indexed, phase, hashed, total }) => {
+      if (phase === 'moves') process.stdout.write(`\rChecking for moved files ${hashed}/${total}...`);
+      else if (indexed % 50 === 0) process.stdout.write(`\rIndexed ${indexed} images...`);
     }).then(r => {
+      if (r.moved) console.log(`\nRelocated ${r.moved} moved/renamed file(s), keeping their ratings and tags`);
+      if (r.missing) console.log(`${r.missing} file(s) are offline — entries and thumbnails kept (see "Delete orphaned data" in the UI)`);
+      if (r.returned) console.log(`${r.returned} previously offline file(s) are back`);
       console.log(`\nScan done: ${r.indexed} images, ${r.errors} errors`);
       broadcast('images:changed');
       startWatcher();

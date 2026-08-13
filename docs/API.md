@@ -41,9 +41,12 @@ List images with filtering, sorting, and pagination.
 | `meta_key` + `meta_value` | — | Legacy single metadata `LIKE` filter (prefer `facets`). |
 | `limit` | `100` | Page size. |
 | `offset` | `0` | Page offset. |
+| `max_id` | — | Only images with `id <= max_id`. Pass back the `snapshot` from your first page to keep paging stable — see [Stable pagination](#stable-pagination). |
+| `missing` | — | `1` = only images whose file is offline, `0` = only images whose file is present. Omit to include both. See [Offline images](#offline-images). |
 
-**Response** `{ images: Image[], total: number }` where `total` is the full match
-count (not just this page). Each `Image`:
+**Response** `{ images: Image[], total: number, snapshot: number }` where `total`
+is the full match count (not just this page) and `snapshot` is the `max_id` this
+query was evaluated against. Each `Image`:
 
 ```json
 {
@@ -60,7 +63,8 @@ count (not just this page). Each `Image`:
   "file_hash": "…",
   "positive_prompt": "…",
   "negative_prompt": "…",
-  "trashed_at": null
+  "trashed_at": null,
+  "missing_at": null
 }
 ```
 
@@ -155,6 +159,22 @@ Permanently delete from the trash (removes files from disk).
 
 **Body:** `{ "ids": number[] }` — an **empty array (or omitted body) empties the entire trash**.
 **Response:** `{ "ok": true, "purged": number, "errors": [] }`.
+
+### `GET /api/images/missing/count`
+
+How many rows point at a file that is currently offline.
+
+**Response:** `{ "missing": 42 }`.
+
+### `DELETE /api/images/missing`
+
+Forget offline images — deletes their rows (metadata and tags cascade) and any
+cached thumbnail no longer referenced by another row. Nothing is removed from
+the image root; those files are already gone. See [Offline images](#offline-images).
+
+**Body:** `{ "ids": number[] }` to purge specific rows, or an **empty body to
+purge every offline row**. Ids that aren't flagged offline are ignored.
+**Response:** `{ "ok": true, "purged": number, "thumbnails": number }`.
 
 ### Tags on an image
 
@@ -302,6 +322,54 @@ An unrecognised prefix (e.g. `steps:30`) is treated as a literal term.
 
 The `-` operator works attached (`-blurry`) or spaced (`- blurry`). Wildcard
 characters (`%`, `_`) are matched literally.
+
+---
+
+## Stable pagination
+
+`GET /api/images` uses `limit`/`offset` paging, which is only stable while the
+underlying rows stay put. A background scan inserts newly indexed images at the
+front of an `mtime-desc` listing, shifting every already-fetched row further
+down — so the next `offset` returns rows the client already has, and they appear
+twice.
+
+To page safely, **echo the `snapshot` value back as `max_id`**:
+
+1. Request the first page normally. The response includes
+   `snapshot` — the highest image id at that moment.
+2. Pass `max_id=<snapshot>` on every follow-up page.
+
+Image ids are `AUTOINCREMENT`, so `id <= max_id` freezes the result set against
+later inserts regardless of the sort mode. `total` also stays constant, so
+"loaded / total" and end-of-list checks stay correct while scrolling. Start a
+new listing (omit `max_id`) to pick up images indexed since.
+
+Every sort order additionally ends in `id`, making it a total order — rows that
+tie on `mtime`, `filename`, or `favorite` can't otherwise be returned in a
+different order between two queries, which would duplicate or skip rows at a
+page boundary.
+
+---
+
+## Offline images
+
+When a scan finds that an image file is gone, the row is **flagged, not
+deleted**: `missing_at` is set to the time it was first noticed. Removable
+drives and network shares come and go, so a vanished path is never treated as
+permission to discard a rating, tags, a caption, or the cached thumbnail.
+
+- Offline images stay in normal listings. Filter with `missing=1` / `missing=0`.
+- `GET /api/thumb/:id` keeps working — thumbnails are cached by content hash and
+  don't need the original.
+- `GET /api/full/:id` returns **`410 { "error": "file offline", "path": … }`**,
+  since the original genuinely can't be served.
+- If the file comes back, the next scan clears the flag automatically. A file
+  that reappears at a *different* path is matched by content hash and its row is
+  repointed, so nothing is lost to a move either.
+- Rows are only ever removed by an explicit `DELETE /api/images/missing`.
+
+Because nothing is deleted automatically, a share that fails to mount cannot
+cost you data — worst case every image is flagged offline until it returns.
 
 ---
 

@@ -4,7 +4,7 @@ import { promisify } from 'util';
 import { join, dirname } from 'path';
 import db from '../db.js';
 import { trashImages, restoreImages, purgeImages } from '../trash.js';
-import { hammingDistance } from '../thumbnails.js';
+import { hammingDistance, thumbPath } from '../thumbnails.js';
 import { captionImage } from '../caption.js';
 
 const router = Router();
@@ -173,6 +173,8 @@ router.get('/', (req, res) => {
     trashed = '',
     limit = 100,
     offset = 0,
+    max_id = '',
+    missing = '',
   } = req.query;
 
   const isTrash = String(trashed) === '1';
@@ -181,6 +183,19 @@ router.get('/', (req, res) => {
   const joins = [];
 
   conditions.push(isTrash ? 'i.trashed_at IS NOT NULL' : 'i.trashed_at IS NULL');
+
+  // Snapshot the result set. Offset pagination is only stable if the underlying
+  // rows don't shift between pages — but a background scan inserts newer images
+  // at the front of an mtime-desc listing, pushing everything the client already
+  // loaded further down, so the next offset re-returns rows it already has.
+  // Image ids are AUTOINCREMENT, so "id <= the max id when paging started"
+  // freezes the set against later inserts regardless of the sort mode. The
+  // client echoes back the `snapshot` value from its first page.
+  const snapshot = Number(max_id) > 0
+    ? Number(max_id)
+    : (db.prepare('SELECT MAX(id) AS m FROM images').get()?.m ?? 0);
+  conditions.push('i.id <= ?');
+  params.push(snapshot);
   if (folder && !isTrash) {
     conditions.push('i.folder_path = ?');
     params.push(folder);
@@ -203,21 +218,31 @@ router.get('/', (req, res) => {
     conditions.push('tg.tag = ?');
     params.push(tag);
   }
+  // Offline images stay in normal listings by default (so a disconnected drive
+  // still browses); `missing=1` narrows to just them, `missing=0` hides them.
+  if (String(missing) === '1') conditions.push('i.missing_at IS NOT NULL');
+  else if (String(missing) === '0') conditions.push('i.missing_at IS NULL');
   applyFacets(req, joins, conditions, params);
 
   const join = joins.join(' ');
 
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
+  // Every sort ends in `i.id` so the ordering is a *total* order. Without a
+  // unique tie-breaker, rows sharing an mtime/filename/rating can come back in a
+  // different order between two queries, which duplicates or skips rows exactly
+  // at a page boundary.
   const sortMap = {
-    'mtime-desc': 'i.mtime DESC',
-    'mtime-asc':  'i.mtime ASC',
-    'name-asc':   'i.filename ASC',
-    'name-desc':  'i.filename DESC',
-    'fav-desc':   'i.favorite DESC, i.mtime DESC',
-    'fav-asc':    'i.favorite ASC, i.mtime DESC',
+    'mtime-desc': 'i.mtime DESC, i.id DESC',
+    'mtime-asc':  'i.mtime ASC, i.id ASC',
+    'name-asc':   'i.filename ASC, i.id ASC',
+    'name-desc':  'i.filename DESC, i.id DESC',
+    'fav-desc':   'i.favorite DESC, i.mtime DESC, i.id DESC',
+    'fav-asc':    'i.favorite ASC, i.mtime DESC, i.id DESC',
   };
-  const orderBy = isTrash ? 'i.trashed_at DESC' : (sortMap[sort] || 'i.mtime DESC');
+  const orderBy = isTrash
+    ? 'i.trashed_at DESC, i.id DESC'
+    : (sortMap[sort] || 'i.mtime DESC, i.id DESC');
 
   const countRow = db.prepare(`SELECT COUNT(DISTINCT i.id) as n FROM images i ${join} ${where}`).get(...params);
   const total = countRow?.n || 0;
@@ -225,13 +250,13 @@ router.get('/', (req, res) => {
   const images = db.prepare(`
     SELECT DISTINCT i.id, i.path, i.filename, i.folder_path, i.size, i.mtime,
            i.width, i.height, i.format, i.favorite, i.file_hash,
-           i.positive_prompt, i.negative_prompt, i.trashed_at
+           i.positive_prompt, i.negative_prompt, i.trashed_at, i.missing_at
     FROM images i ${join} ${where}
     ORDER BY ${orderBy}
     LIMIT ? OFFSET ?
   `).all(...params, Number(limit), Number(offset));
 
-  res.json({ images, total });
+  res.json({ images, total, snapshot });
 });
 
 // Get single image details
@@ -387,6 +412,40 @@ router.delete('/trash', async (req, res) => {
   const { ids } = req.body || {};
   const result = await purgeImages(ids);
   res.json({ ok: true, ...result });
+});
+
+// How many rows point at a file that is currently offline.
+router.get('/missing/count', (req, res) => {
+  const n = db.prepare('SELECT COUNT(*) AS n FROM images WHERE missing_at IS NOT NULL').get()?.n || 0;
+  res.json({ missing: n });
+});
+
+// Forget offline images: drop the rows (metadata and tags cascade) and their
+// cached thumbnails. Nothing is deleted from the image root — the files are
+// already gone. This is the *only* thing that removes a vanished image, and it
+// is always explicit, so a share that fails to mount can never lose data.
+// Body: `{ ids }` to purge specific rows, or empty to purge every offline row.
+router.delete('/missing', (req, res) => {
+  const { ids } = req.body || {};
+  const rows = Array.isArray(ids) && ids.length
+    ? db.prepare(
+        `SELECT id, file_hash FROM images WHERE missing_at IS NOT NULL AND id IN (${ids.map(() => '?').join(',')})`
+      ).all(...ids)
+    : db.prepare('SELECT id, file_hash FROM images WHERE missing_at IS NOT NULL').all();
+
+  const del = db.prepare('DELETE FROM images WHERE id = ?');
+  db.transaction(() => { for (const r of rows) del.run(r.id); })();
+
+  // Drop each thumbnail, unless another row still shares that content hash.
+  let thumbs = 0;
+  for (const r of rows) {
+    if (!r.file_hash) continue;
+    const stillUsed = db.prepare('SELECT 1 FROM images WHERE file_hash = ? LIMIT 1').get(r.file_hash);
+    if (stillUsed) continue;
+    try { unlink(thumbPath(r.file_hash), () => {}); thumbs++; } catch {}
+  }
+
+  res.json({ ok: true, purged: rows.length, thumbnails: thumbs });
 });
 
 export default router;

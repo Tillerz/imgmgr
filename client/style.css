@@ -916,6 +916,46 @@ html, body, #root {
   font-variant-numeric: tabular-nums; color: var(--text);
 }
 
+/* --- Offline (missing) images ------------------------------- */
+.offline-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 10px; margin: 6px 0;
+  font-size: 12px; color: var(--text);
+  background: rgba(230, 160, 60, 0.13);
+  border: 1px solid rgba(230, 160, 60, 0.45);
+  border-radius: 5px;
+}
+.offline-banner > span:first-child { margin-right: auto; }
+
+.tile.missing .tile-img-wrap img { opacity: 0.45; filter: grayscale(0.7); }
+.tile-missing-badge {
+  position: absolute; top: 6px; right: 6px; z-index: 2;
+  padding: 2px 6px; border-radius: 4px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.02em;
+  color: #2a1a05; background: rgba(240, 180, 80, 0.95);
+  pointer-events: auto; cursor: help;
+}
+
+.viewer-offline {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 16px; height: 100%; padding: 24px;
+}
+.viewer-offline-thumb {
+  max-width: min(70%, 520px); max-height: 55%;
+  object-fit: contain; opacity: 0.6; filter: grayscale(0.5);
+  border-radius: 6px;
+}
+.viewer-offline-note {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  text-align: center; font-size: 13px; color: var(--text-muted); max-width: 640px;
+}
+.viewer-offline-note strong { color: #f0b450; font-size: 15px; }
+.viewer-offline-note code {
+  font-size: 11px; word-break: break-all;
+  padding: 3px 6px; border-radius: 4px; background: rgba(255, 255, 255, 0.07);
+}
+.viewer-offline-since { font-size: 11px; opacity: 0.75; }
+
 /* --- Caption section --------------------------------------- */
 .caption-body { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .caption-body .meta-prompt { width: 100%; }

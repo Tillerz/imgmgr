@@ -448,14 +448,31 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
 
         <div className="viewer-body">
           <div className={`viewer-image-area ${zoom ? 'zoomed' : ''}`} onClick={() => setZoom(v => !v)}>
-            <img
-              ref={imgRef}
-              src={api.full(imageId)}
-              alt={image?.filename || ''}
-              className="viewer-img"
-              draggable={false}
-            />
-            <div className="viewer-zoom-hint">{zoom ? 'Click to fit' : 'Click to zoom'}</div>
+            {image?.missing_at ? (
+              // The original is offline (unplugged drive, unmounted share). Fall
+              // back to the cached thumbnail so there's still something to look
+              // at, and say why it's blurry.
+              <div className="viewer-offline">
+                <img src={api.thumb(imageId)} alt={image.filename} className="viewer-offline-thumb" draggable={false} />
+                <div className="viewer-offline-note">
+                  <strong>⚠ File offline</strong>
+                  <span>Showing the cached thumbnail — the original isn't reachable right now.</span>
+                  <code>{image.path}</code>
+                  <span className="viewer-offline-since">Missing since {new Date(image.missing_at).toLocaleString()}</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <img
+                  ref={imgRef}
+                  src={api.full(imageId)}
+                  alt={image?.filename || ''}
+                  className="viewer-img"
+                  draggable={false}
+                />
+                <div className="viewer-zoom-hint">{zoom ? 'Click to fit' : 'Click to zoom'}</div>
+              </>
+            )}
           </div>
 
           <div className="meta-resizer" onPointerDown={startResize} title="Drag to resize" />

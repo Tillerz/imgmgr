@@ -42,6 +42,7 @@ export default function Toolbar({
   search, onSearch,
   tagFilter, onTagFilter,
   facets = {}, onFacet,
+  missingFilter, onMissingFilter, onPurgeMissing,
   selectedCount, total, loaded,
   onSelectAll, onDeselectAll,
   onDeleteSelected,
@@ -75,6 +76,15 @@ export default function Toolbar({
     queryFn: api.allTags,
     staleTime: 30_000,
   });
+
+  // Offline images — only surfaced once some exist, so the toolbar stays clean
+  // for the normal case where every file is reachable.
+  const { data: missingInfo } = useQuery({
+    queryKey: ['missingCount'],
+    queryFn: api.missingCount,
+    staleTime: 30_000,
+  });
+  const missingCount = missingInfo?.missing ?? 0;
 
   const totalCount = Object.values(counts).reduce((a, b) => a + b, 0);
   const unratedCount = counts[0] ?? 0;
@@ -137,6 +147,29 @@ export default function Toolbar({
       {hasNewImages && (
         <div className="new-images-banner" onClick={onRefreshNew}>
           ↻ New images available — click to refresh
+        </div>
+      )}
+
+      {missingCount > 0 && (
+        <div className="offline-banner">
+          <span>
+            ⚠ <strong>{missingCount}</strong> image{missingCount === 1 ? "'s file is" : "s' files are"} offline.
+            Ratings, tags and thumbnails are kept — reconnect the drive/share and re-scan to restore them.
+          </span>
+          <button
+            className={`btn btn-secondary btn-xs ${missingFilter === '1' ? 'active' : ''}`}
+            onClick={() => onMissingFilter(missingFilter === '1' ? '' : '1')}
+            title="Show only images whose file is offline"
+          >
+            {missingFilter === '1' ? 'Show all' : 'Show offline only'}
+          </button>
+          <button
+            className="btn btn-danger btn-xs"
+            onClick={onPurgeMissing}
+            title="Forget these images: remove their database entries and cached thumbnails"
+          >
+            Delete orphaned data
+          </button>
         </div>
       )}
 

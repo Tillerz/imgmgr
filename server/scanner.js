@@ -30,7 +30,8 @@ const upsertImage = db.prepare(`
     size=excluded.size, mtime=excluded.mtime, width=excluded.width, height=excluded.height,
     format=excluded.format, file_hash=excluded.file_hash, phash=excluded.phash,
     thumbnail_path=excluded.thumbnail_path, positive_prompt=excluded.positive_prompt,
-    negative_prompt=excluded.negative_prompt, indexed_at=excluded.indexed_at
+    negative_prompt=excluded.negative_prompt, indexed_at=excluded.indexed_at,
+    missing_at=NULL
   RETURNING id
 `);
 
@@ -89,6 +90,103 @@ export async function indexFile(filePath) {
   }
 }
 
+// Carry database rows over to files that changed location.
+//
+// A moved or renamed file looks like two unrelated things to a path-keyed
+// scanner: an unknown new path (indexed as a fresh row) and a stale old path
+// (pruned at the end of the scan, taking its star rating, tags, caption and
+// metadata with it via ON DELETE CASCADE). Matching the two by content hash
+// lets us just update the row's path instead, so its id — and everything
+// hanging off it — survives. Must run before indexing and pruning.
+//
+// Returns the number of rows relocated.
+export async function reconcileMoves(diskPaths, onProgress) {
+  const rows = db.prepare('SELECT id, path, filename, file_hash FROM images').all();
+  const known = new Set(rows.map(r => r.path));
+  // Rows whose file is gone. Trashed rows point into the trash dir and still
+  // exist on disk, so they never show up here.
+  const missing = rows.filter(r => r.file_hash && !diskPaths.has(r.path));
+  if (!missing.length) return 0; // nothing vanished — skip hashing entirely
+
+  const unknown = [];
+  for (const p of diskPaths) if (!known.has(p)) unknown.push(p);
+  if (!unknown.length) return 0; // nothing appeared to match them against
+
+  // Only the files that aren't already indexed need hashing, so an ordinary
+  // scan (no moves) never reaches this loop.
+  const byHash = new Map();
+  let hashed = 0;
+  for (const p of unknown) {
+    try {
+      const h = await computeFileHash(p);
+      if (!byHash.has(h)) byHash.set(h, []);
+      byHash.get(h).push(p);
+    } catch { /* unreadable file — just leave it for the normal index pass */ }
+    if (++hashed % 100 === 0) onProgress?.({ hashed, total: unknown.length });
+  }
+  for (const list of byHash.values()) list.sort(); // deterministic pairing
+
+  const updatePath = db.prepare(
+    'UPDATE images SET path = ?, folder_path = ?, filename = ? WHERE id = ?'
+  );
+  const claimed = new Set();
+  let moved = 0;
+
+  // Claim an unindexed file with this row's content hash. `sameName` restricts
+  // to an identical filename, which is what a folder move/rename looks like.
+  const take = (row, sameName) => {
+    const candidates = byHash.get(row.file_hash);
+    if (!candidates) return false;
+    for (const p of candidates) {
+      if (claimed.has(p)) continue;
+      if (sameName && basename(p) !== row.filename) continue;
+      claimed.add(p);
+      updatePath.run(p, dirname(p), basename(p), row.id);
+      moved++;
+      return true;
+    }
+    return false;
+  };
+
+  db.transaction(() => {
+    // Same-filename matches first (a moved/renamed folder), so they can't be
+    // stolen by the looser content-only pass that catches renamed files. When
+    // several identical copies move at once the pairing is arbitrary but
+    // deterministic — the content is the same either way.
+    const leftover = missing.filter(r => !take(r, true));
+    for (const r of leftover) take(r, false);
+  })();
+
+  return moved;
+}
+
+// Flag rows whose file is gone, and clear the flag for any that came back.
+//
+// Deliberately non-destructive: removable media and network shares disappear
+// and reappear all the time, and a vanished path is no reason to throw away a
+// rating, tags, a caption or a cached thumbnail. Because nothing is deleted
+// here, a share that fails to mount can't cost the user any data — rows are
+// only ever removed by an explicit purge (DELETE /api/images/missing).
+//
+// Returns { missing, returned } — how many rows changed state this pass.
+export function syncMissingFlags() {
+  const now = Date.now();
+  const markMissing = db.prepare('UPDATE images SET missing_at = ? WHERE id = ? AND missing_at IS NULL');
+  const markPresent = db.prepare('UPDATE images SET missing_at = NULL WHERE id = ? AND missing_at IS NOT NULL');
+  const rows = db.prepare('SELECT id, path, missing_at FROM images').all();
+  let missing = 0, returned = 0;
+  db.transaction(() => {
+    for (const row of rows) {
+      if (existsSync(row.path)) {
+        if (row.missing_at != null) { markPresent.run(row.id); returned++; }
+      } else if (row.missing_at == null) {
+        markMissing.run(now, row.id); missing++;
+      }
+    }
+  })();
+  return { missing, returned };
+}
+
 function collectFolders(root) {
   const folders = new Set();
   function walk(dir) {
@@ -123,7 +221,7 @@ export async function runScan(onProgress) {
   if (!existsSync(config.imageRoot)) return { status: 'imageRoot not found', path: config.imageRoot };
 
   scanRunning = true;
-  let indexed = 0, skipped = 0, errors = 0;
+  let indexed = 0, skipped = 0, errors = 0, moved = 0, missing = 0, returned = 0;
 
   try {
     // Index folders
@@ -133,8 +231,13 @@ export async function runScan(onProgress) {
       upsertFolder.run(folderPath, name, parent);
     }
 
+    // Walk once and reuse the list: move reconciliation needs the full set of
+    // paths on disk before anything is indexed or pruned.
+    const files = [...walkFiles(config.imageRoot)];
+    moved = await reconcileMoves(new Set(files), (p) => onProgress?.({ ...p, phase: 'moves' }));
+
     // Index files
-    for (const filePath of walkFiles(config.imageRoot)) {
+    for (const filePath of files) {
       try {
         await indexFile(filePath);
         indexed++;
@@ -144,15 +247,10 @@ export async function runScan(onProgress) {
       }
     }
 
-    // Remove DB entries for files that no longer exist on disk
-    const allPaths = db.prepare('SELECT id, path FROM images').all();
-    const deleteStmt = db.prepare('DELETE FROM images WHERE id = ?');
-    for (const row of allPaths) {
-      if (!existsSync(row.path)) deleteStmt.run(row.id);
-    }
+    ({ missing, returned } = syncMissingFlags());
   } finally {
     scanRunning = false;
   }
 
-  return { status: 'done', indexed, skipped, errors };
+  return { status: 'done', indexed, skipped, errors, moved, missing, returned };
 }

@@ -27,6 +27,7 @@ export default function App() {
   const [similarTo, setSimilarTo] = useState(null); // image id we're showing matches for
   const [similarThreshold, setSimilarThreshold] = usePersistentState('imgmgr.similarThreshold', 14); // max hash distance for "similar"
   const [captioning, setCaptioning] = useState(null); // { done, total } while bulk-captioning
+  const [missingFilter, setMissingFilter] = useState(''); // '' = all, '1' = only offline files
   const lastClickedId = useRef(null);
 
   // SSE: listen for server-pushed change notifications
@@ -48,6 +49,11 @@ export default function App() {
   const offsetRef = useRef(0);
   const loadingRef = useRef(false);   // blocks concurrent appends
   const reqIdRef = useRef(0);         // supersedes in-flight loads when filters change
+  // Max image id at the time this result set started. Echoed back on every
+  // follow-up page so images indexed while scrolling can't shift the offsets
+  // (see the snapshot comment in server/routes/images.js). Reset on each
+  // fresh load; the "New images available" banner picks up a new snapshot.
+  const snapshotRef = useRef(null);
 
   // Fetch a page. off === 0 resets the list (filter change); otherwise appends.
   const fetchPage = useCallback(async (off = 0) => {
@@ -59,26 +65,37 @@ export default function App() {
       if (similarTo) {
         data = await api.similar(similarTo, similarThreshold); // returns the whole match set, unpaginated
       } else {
+        if (off === 0) snapshotRef.current = null; // fresh listing → new snapshot
         const params = trashView
           ? { trashed: 1, limit: PAGE, offset: off }
           : {
               folder: currentFolder, sort, favorite_min: favoriteMin, search, tag: tagFilter,
               facets: JSON.stringify(facets), limit: PAGE, offset: off,
+              ...(missingFilter ? { missing: missingFilter } : {}),
             };
+        if (snapshotRef.current != null) params.max_id = snapshotRef.current;
         data = await api.images(params);
       }
       if (myReq !== reqIdRef.current) return; // a newer load superseded this one
+      if (data.snapshot != null) snapshotRef.current = data.snapshot;
       offsetRef.current = (similarTo ? 0 : off) + data.images.length;
       if (off === 0 || similarTo) {
         setImages(data.images);
       } else {
-        setImages(prev => [...prev, ...data.images]);
+        // Drop ids we already hold. The snapshot should prevent overlap, but a
+        // soft-delete elsewhere can still shift the window mid-scroll, and
+        // duplicate ids would collide as React keys and render repeated rows.
+        setImages(prev => {
+          const seen = new Set(prev.map(i => i.id));
+          const fresh = data.images.filter(i => !seen.has(i.id));
+          return fresh.length ? [...prev, ...fresh] : prev;
+        });
       }
       setTotal(data.total);
     } finally {
       if (myReq === reqIdRef.current) loadingRef.current = false;
     }
-  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView, facets, similarTo, similarThreshold]);
+  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView, facets, similarTo, similarThreshold, missingFilter]);
 
   // Initial load and on filter change
   React.useEffect(() => {
@@ -146,6 +163,28 @@ export default function App() {
     setCaptioning(null);
     if (failed) alert(`Captioning finished with ${failed} error(s) out of ${ids.length}.`);
   }, [selectedIds, captioning, qc]);
+
+  // Forget every offline image: drops the database rows and cached thumbnails.
+  // Destructive and irreversible, so it's always an explicit, confirmed action —
+  // a share that simply failed to mount must never lose data silently.
+  const handlePurgeMissing = useCallback(async () => {
+    const { missing } = await api.missingCount();
+    if (!missing) return;
+    const ok = window.confirm(
+      `Permanently forget ${missing} offline image${missing === 1 ? '' : 's'}?\n\n` +
+      'Their ratings, tags, captions and cached thumbnails will be deleted.\n' +
+      'The image files themselves are already gone — nothing else is touched.\n\n' +
+      "If this is just a disconnected drive or share, cancel and reconnect it instead."
+    );
+    if (!ok) return;
+    const r = await api.purgeMissing();
+    setMissingFilter('');
+    qc.invalidateQueries({ queryKey: ['missingCount'] });
+    qc.invalidateQueries({ queryKey: ['favCounts'] });
+    offsetRef.current = 0;
+    fetchPage(0);
+    alert(`Removed ${r.purged} entr${r.purged === 1 ? 'y' : 'ies'} and ${r.thumbnails} cached thumbnail(s).`);
+  }, [qc, fetchPage]);
 
   // Show images visually similar to the given one (from the lightbox).
   const showSimilar = useCallback((id) => {
@@ -356,6 +395,9 @@ export default function App() {
                 selectedCount={selectedIds.size}
                 total={total}
                 loaded={images.length}
+                missingFilter={missingFilter}
+                onMissingFilter={setMissingFilter}
+                onPurgeMissing={handlePurgeMissing}
                 onBulkRate={handleBulkRate}
                 onCaptionSelected={handleCaptionSelected}
                 captioning={captioning}

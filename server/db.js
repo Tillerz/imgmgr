@@ -70,6 +70,12 @@ const imageCols = db.prepare('PRAGMA table_info(images)').all().map(c => c.name)
 if (!imageCols.includes('trashed_at'))    db.exec('ALTER TABLE images ADD COLUMN trashed_at INTEGER');
 if (!imageCols.includes('original_path')) db.exec('ALTER TABLE images ADD COLUMN original_path TEXT');
 if (!imageCols.includes('caption'))        db.exec('ALTER TABLE images ADD COLUMN caption TEXT');
+// Set when a scan finds the file gone. The row (rating, tags, caption, metadata)
+// and its cached thumbnail are kept so offline media — an unplugged drive, an
+// unmounted NFS share — still browses normally; cleared when the file returns.
+// Rows are only ever removed by an explicit "delete orphaned data" request.
+if (!imageCols.includes('missing_at'))     db.exec('ALTER TABLE images ADD COLUMN missing_at INTEGER');
 db.exec('CREATE INDEX IF NOT EXISTS idx_images_trashed ON images(trashed_at)');
+db.exec('CREATE INDEX IF NOT EXISTS idx_images_missing ON images(missing_at)');
 
 export default db;

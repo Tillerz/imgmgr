@@ -17,6 +17,7 @@ A browser-based image manager built for large collections of AI-generated images
 - **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `F` toggles 5★, `Space` advances, `Del` deletes and advances
 - **Copy prompt** — one click copies an image's positive prompt, negative prompt, or template, from a tile's hover button or the lightbox
 - **Trash & undo** — deletes are recoverable: images move to a trash you can restore from, and an Undo appears right after deleting
+- **Offline-media friendly** — if a drive or network share goes away, those images stay browsable (cached thumbnails, ratings, tags and metadata intact) and are just badged as offline; nothing is ever deleted without you asking
 - **Delete protection** — starred images can't be deleted from any view
 - **Multi-select** — select images, then move to a folder, delete, tag, or **bulk-rate** them
 - **Metadata facet filters** — filter by **Model**, **Sampler**, or **Steps** dropdowns (extracted from the SD generation parameters), combinable with search and folders
@@ -216,7 +217,30 @@ Deletes are **recoverable**. Instead of erasing files, imgmgr moves them into a 
 
 ### Moving images
 
-Drag a tile and drop it onto a folder in the tree, or use the **Move N →** button in the toolbar after selecting images.
+Drag a tile and drop it onto a folder in the tree, or use the **Move N →** button in the toolbar after selecting images. This renames the file on disk and updates its database row in place, so ratings, tags, captions and metadata all follow it.
+
+#### Reorganising folders outside imgmgr
+
+You can also move or rename folders directly on disk (with `mv`, a file manager, etc.). Thumbnails are cached by **content hash** (`.cache/thumbs/<md5>.webp`), so they're reused no matter where a file ends up — nothing is regenerated.
+
+The database, however, identifies an image by its **path**. To stop an external move from looking like "one file deleted, one unrelated file added" — which would drop the old row and its star rating, tags and caption — the scanner reconciles moves before it indexes or prunes: any file that vanished is matched by content hash against the newly-appeared files, and on a match the existing row is simply repointed at the new path. Same row, so **ratings, tags, captions and metadata survive** a folder move or rename.
+
+Just run a scan afterwards (restart the server, or `POST /api/scan`) so the new locations are picked up; the console reports how many files were relocated. Until then the moved images show broken thumbnails, since their stored paths are stale.
+
+> Matching is by file content, so renamed files are recognised too. When several byte-identical copies move at once, imgmgr pairs them up deterministically — which copy inherits which row is arbitrary, but the content is the same either way. Scans where nothing has moved skip this step entirely, so there's no added cost.
+
+### Offline media (removable drives, network shares)
+
+Images that live on an external drive or an NFS/SMB share don't have to be connected for you to use imgmgr. When a scan finds a file gone, its entry is **flagged as offline, never deleted**:
+
+- The image **stays in the grid** and keeps its cached thumbnail, so you can browse, search, filter, rate and tag it exactly as before. It's dimmed and badged **⚠ offline**.
+- **Ratings, tags, captions and metadata are all preserved.** Opening one in the lightbox shows the cached thumbnail with a note explaining the original isn't reachable and when it went missing.
+- A toolbar banner reports how many files are offline, with **Show offline only** to review them.
+- **Reconnect the drive and re-scan** and the flag clears itself automatically — everything is exactly as you left it. If the files come back at a *different* path, the content-hash matching above repoints them, so a move while disconnected is fine too.
+
+Nothing is ever removed automatically. If you genuinely want to forget images whose files are gone for good, click **Delete orphaned data** in that banner — it asks for confirmation, then drops those database entries and their cached thumbnails. That's the only thing that removes a vanished image.
+
+> This also means a share that fails to mount can't cost you anything: worst case every image is flagged offline until it's reachable again.
 
 ### Duplicate finder
 

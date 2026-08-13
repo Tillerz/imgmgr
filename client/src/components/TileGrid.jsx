@@ -57,7 +57,7 @@ function Tile({ image, selected, onSelect, onOpen, onFavoriteChange, sortedIds, 
     <div
       ref={setRefs}
       style={style}
-      className={`tile ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''}`}
+      className={`tile ${selected ? 'selected' : ''} ${isDragging ? 'dragging' : ''} ${image.missing_at ? 'missing' : ''}`}
       onClick={handleClick}
       {...attributes}
       {...listeners}
@@ -70,6 +70,14 @@ function Tile({ image, selected, onSelect, onOpen, onFavoriteChange, sortedIds, 
           draggable={false}
         />
         {selected && <div className="tile-check-overlay">✓</div>}
+        {image.missing_at && (
+          <div
+            className="tile-missing-badge"
+            title={`File offline since ${new Date(image.missing_at).toLocaleString()}\n${image.path || ''}\nThumbnail and details are still cached.`}
+          >
+            ⚠ offline
+          </div>
+        )}
         <div className="tile-select-btn" onClick={handleSelectClick} title="Select">◻</div>
         {image.positive_prompt && (
           <div
