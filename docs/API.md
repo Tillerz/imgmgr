@@ -105,7 +105,7 @@ All raw metadata key/value pairs for the image (EXIF tags, `UserComment`,
 
 ### `GET /api/images/:id/similar`
 
-Find visually similar images using the perceptual hash (dHash).
+Find visually similar images using the perceptual hash (DCT-based pHash).
 
 **Query:** `threshold` (Hamming distance, default `10`, clamped 0–32),
 `limit` (default `200`, max `500`).
@@ -245,8 +245,13 @@ Create a folder on disk and register it.
 
 Find duplicate groups. Trashed images are excluded.
 
-**Query:** `type` = `exact` (default) | `perceptual` | `seed`;
-`threshold` (perceptual only, default `8` bits).
+**Query:** `type` = `exact` (default) | `seed`.
+
+> The `perceptual` mode was removed — it compared every image against every other
+> one (O(n²): ~4.8 billion comparisons at 98k images), blocking the server for
+> hours while producing poor groupings. It now returns **`410 Gone`**. For visual
+> matches use [`GET /api/images/:id/similar`](#get-apiimagesidsimilar), which
+> compares one hash against the library.
 
 **Response:** `{ groups: Group[], total }`. Each `Group` has a `type`, an `images`
 array, and (depending on type) a `hash` or `seed`.

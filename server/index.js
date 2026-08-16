@@ -16,13 +16,37 @@ import { addClient, broadcast } from './events.js';
 
 const app = express();
 
-// Minimal CORS: allow any origin (server is intended for local, trusted use).
-// Replaces the `cors` package to keep the dependency tree small.
+// Minimal CORS, locked to the origins the UI is actually served on. Replaces the
+// `cors` package to keep the dependency tree small.
+//
+// There is no authentication, so a wide-open policy would let any page the user
+// happens to have open drive this API — including the endpoints that move and
+// delete files. Same-origin requests from the UI carry a matching Origin (or
+// none at all, e.g. curl), so this costs the app nothing.
+const ALLOW_ANY_ORIGIN = config.allowedOrigins.includes('*');
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin = req.headers.origin;
+  const allowed = ALLOW_ANY_ORIGIN || !origin || config.allowedOrigins.includes(origin);
+
+  if (origin && allowed) {
+    res.setHeader('Access-Control-Allow-Origin', ALLOW_ANY_ORIGIN ? '*' : origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') return res.sendStatus(204);
+
+  if (req.method === 'OPTIONS') return res.sendStatus(allowed ? 204 : 403);
+
+  // Only state-changing requests are refused outright; reads stay open so
+  // existing tooling and bookmarks keep working.
+  if (!allowed && !SAFE_METHODS.has(req.method)) {
+    return res.status(403).json({
+      error: 'cross-origin request refused',
+      hint: 'add this origin to "allowedOrigins" in config.json if it is expected',
+    });
+  }
   next();
 });
 app.use(express.json());

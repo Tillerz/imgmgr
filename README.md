@@ -23,9 +23,8 @@ A browser-based image manager built for large collections of AI-generated images
 - **Metadata facet filters** — filter by **Model**, **Sampler**, or **Steps** dropdowns (extracted from the SD generation parameters), combinable with search and folders
 - **Find similar** — from the lightbox, discover visually similar images using a DCT-based perceptual hash, with an adjustable strictness slider
 - **AI captions (VQA)** — generate a natural-language caption for a single image or a whole selection via an [SDNext](https://github.com/vladmandic/sdnext) server; captions are stored in the database and separately searchable
-- **Duplicate finder** — three modes:
+- **Duplicate finder** — two modes:
   - *Exact* — identical file content (MD5 hash)
-  - *Visual* — perceptually similar images (perceptual hash, slow!)
   - *Seed* — same generation seed in the filename (might match non-similar images!)
 - **Live updates** — watches today's output folder via SSE; a banner appears when new images arrive
 - **Metadata search** — filter by filename, prompt text, or arbitrary EXIF key/value, with multi-term AND, exclusions (`-term`), and quoted phrases; target a single field with `caption:` / `prompt:` / `name:` prefixes
@@ -82,6 +81,24 @@ Edit `config.json` to point at your image root:
 | `captionModel` | `Google Gemma 3 4B` | VQA model name requested for captions (must exist on the SDNext server) |
 | `captionQuestion` | `describe the image` | Prompt/question sent to the caption model |
 | `captionSystem` | *(see `config.js`)* | System prompt sent to the caption model |
+| `captionTimeoutMs` | `300000` | Give up on a caption request after this long (5 min). A cold model load is slow, but without a limit a wedged SDNext would hang the request forever |
+| `allowedOrigins` | localhost/127.0.0.1 on `port` | Browser origins allowed to make **state-changing** requests. See [Access control](#access-control) |
+
+### Access control
+
+imgmgr has no login — it assumes a local, trusted machine. But a browser will happily send requests to `localhost` on behalf of *any* page you have open, so the API restricts who may change things:
+
+- **Reads** (`GET`/`HEAD`) are open.
+- **Writes** (`POST`/`PATCH`/`DELETE`) are refused with `403` unless the request's `Origin` is in `allowedOrigins`, or there is no `Origin` at all (curl, scripts, the server itself).
+- **Filesystem paths in a request body** (`targetFolder` when moving, `path` when creating a folder) must resolve **inside `imageRoot`**, so the API can't be used to write elsewhere on the machine.
+
+By default `allowedOrigins` covers `http://localhost:<port>`, `http://127.0.0.1:<port>` and the IPv6 equivalent. If you open the UI on another address (a LAN hostname, say), add it:
+
+```json
+{ "allowedOrigins": ["http://localhost:3000", "http://my-nas.local:3000"] }
+```
+
+Set it to `["*"]` to disable the check entirely. Not recommended — that restores the state where any website could drive your API.
 
 ## Running
 
@@ -249,8 +266,9 @@ Click **Duplicates** in the toolbar to open the duplicate panel.
 | Mode | How it works |
 |------|-------------|
 | **Exact** | Groups images with identical MD5 file hashes |
-| **Visual** | Groups images whose perceptual hash (DCT-based pHash) differs by ≤ 8 bits |
 | **Seed** | Groups images sharing the same generation seed (last number in the filename, e.g. `00042-1827738702.png`) |
+
+> A third **Visual** mode (perceptual-hash grouping) was removed. It compared every image against every other one, which meant hours of a frozen server on a large library — and the groupings weren't good. Use **🔍 Similar** in the lightbox instead: it compares one image against the library and returns instantly.
 
 Selection spans every group at once. Use the action bar at the top of the panel to **Keep oldest in all, select rest** (across all groups), **Clear**, or **Delete N selected** — so you can clean up every folder's duplicates in one pass instead of group by group. Each group also has its own **Keep oldest, select rest** button, and you can click individual tiles to fine-tune the selection. Deletions go to the trash, so they're recoverable.
 
@@ -310,7 +328,7 @@ imgmgr/
 │   ├── meta.js           # PNG tEXt / WebP+JPEG EXIF + gen-param extraction
 │   ├── thumbnails.js     # Sharp thumbnail generation, DCT pHash, file hash
 │   ├── caption.js        # AI captioning via the SDNext VQA endpoint
-│   ├── duplicates.js     # Exact / perceptual / seed duplicate detection
+│   ├── duplicates.js     # Exact / seed duplicate detection
 │   ├── trash.js          # Soft-delete: trash / restore / purge
 │   ├── watcher.js        # Chokidar file watcher (today's folder only)
 │   ├── events.js         # SSE broadcast utility

@@ -3,6 +3,7 @@ import { rename, mkdir, copyFile, unlink, existsSync } from 'fs';
 import { promisify } from 'util';
 import { join, dirname } from 'path';
 import db from '../db.js';
+import { isInsideImageRoot } from '../config.js';
 import { trashImages, restoreImages, purgeImages } from '../trash.js';
 import { hammingDistance, thumbPath } from '../thumbnails.js';
 import { captionImage } from '../caption.js';
@@ -356,6 +357,10 @@ router.patch('/:id', (req, res) => {
 router.post('/move', async (req, res) => {
   const { ids, targetFolder } = req.body;
   if (!Array.isArray(ids) || !targetFolder) return res.status(400).json({ error: 'ids and targetFolder required' });
+  // Never let a request body move files outside the library.
+  if (!isInsideImageRoot(targetFolder)) {
+    return res.status(400).json({ error: 'targetFolder must be inside the image root' });
+  }
 
   try {
     await mkdirP(targetFolder, { recursive: true });

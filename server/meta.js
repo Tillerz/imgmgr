@@ -2,15 +2,25 @@ import { readFile } from 'fs/promises';
 import exifr from 'exifr';
 import exifReader from 'exif-reader';
 
+// Upper bound on a single text chunk we're willing to decode. Real SD parameter
+// blocks are a few KB; anything past this is a malformed or hostile length field,
+// and decoding it would just build a huge string for the caller to discard.
+const MAX_TEXT_CHUNK = 1 << 20; // 1 MiB
+// Stops a pathological file from spinning the chunk walker. Both loops below
+// always advance, so this is belt-and-braces rather than a known hang.
+const MAX_CHUNKS = 4096;
+
 // Read PNG tEXt and iTXt chunks directly from buffer
 function parsePNGTextChunks(buf) {
   const chunks = {};
   if (buf.length < 8) return chunks;
   let offset = 8;
-  while (offset + 12 <= buf.length) {
+  let seen = 0;
+  while (offset + 12 <= buf.length && seen++ < MAX_CHUNKS) {
     const length = buf.readUInt32BE(offset);
     const type = buf.toString('ascii', offset + 4, offset + 8);
     if (type === 'IEND') break;
+    if (length > MAX_TEXT_CHUNK) { offset += 12 + length; continue; }
     if (type === 'tEXt' && offset + 8 + length <= buf.length) {
       const data = buf.subarray(offset + 8, offset + 8 + length);
       const nul = data.indexOf(0);
@@ -42,10 +52,11 @@ function extractWebPChunks(buf) {
   if (buf.toString('ascii', 0, 4) !== 'RIFF') return chunks;
   if (buf.toString('ascii', 8, 12) !== 'WEBP') return chunks;
   let offset = 12;
-  while (offset + 8 <= buf.length) {
+  let seen = 0;
+  while (offset + 8 <= buf.length && seen++ < MAX_CHUNKS) {
     const type = buf.toString('ascii', offset, offset + 4);
     const size = buf.readUInt32LE(offset + 4);
-    if (offset + 8 + size > buf.length) break;
+    if (offset + 8 + size > buf.length) break; // truncated / bogus length
     chunks[type] = buf.slice(offset + 8, offset + 8 + size);
     offset += 8 + size + (size & 1); // chunks are word-aligned
   }
@@ -168,9 +179,18 @@ export async function extractMetadata(filePath) {
     } else if (isJPEG) {
       // SD tools write parameters into the EXIF UserComment (same as WebP).
       // Locate the APP1 "Exif\0\0" header and hand the TIFF block to exif-reader.
+      // Trim to the APP1 segment's declared length where possible: the marker is
+      // preceded by FF E1 <2-byte big-endian length>, and passing only that slice
+      // keeps whole-file image data out of the EXIF parser.
       const marker = buf.indexOf(Buffer.from('Exif\0\0', 'latin1'));
+      let exifEnd = buf.length;
+      if (marker >= 4 && buf[marker - 4] === 0xff && buf[marker - 3] === 0xe1) {
+        const segLen = buf.readUInt16BE(marker - 2); // covers the length field itself
+        const end = marker - 2 + segLen;
+        if (end > marker + 6 && end <= buf.length) exifEnd = end;
+      }
       if (marker !== -1) {
-        try { applyExifBuffer(buf.slice(marker + 6), result); } catch {}
+        try { applyExifBuffer(buf.slice(marker + 6, exifEnd), result); } catch {}
       }
     } else {
       // PNG: use exifr + manual tEXt chunk reading

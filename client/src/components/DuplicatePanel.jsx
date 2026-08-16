@@ -91,9 +91,8 @@ export default function DuplicatePanel({ onClose, onDeleted }) {
         <div className="dup-panel-header">
           <h2>Duplicate Finder</h2>
           <div className="dup-type-toggle">
-            <button className={`btn btn-sm ${dupType === 'exact'      ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDupType('exact')}>Exact</button>
-            <button className={`btn btn-sm ${dupType === 'perceptual' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDupType('perceptual')}>Visual</button>
-            <button className={`btn btn-sm ${dupType === 'seed'       ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDupType('seed')}>Seed</button>
+            <button className={`btn btn-sm ${dupType === 'exact' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDupType('exact')}>Exact</button>
+            <button className={`btn btn-sm ${dupType === 'seed'  ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setDupType('seed')}>Seed</button>
           </div>
           <button className="btn-icon btn-close" onClick={onClose}>✕</button>
         </div>

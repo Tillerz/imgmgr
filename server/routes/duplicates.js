@@ -1,17 +1,19 @@
 import { Router } from 'express';
-import { findExactDuplicates, findPerceptualDuplicates, findSeedDuplicates } from '../duplicates.js';
+import { findExactDuplicates, findSeedDuplicates } from '../duplicates.js';
 import { trashImages } from '../trash.js';
 
 const router = Router();
 
 router.get('/', (req, res) => {
-  const { type = 'exact', threshold = 8 } = req.query;
+  const { type = 'exact' } = req.query;
+  if (type === 'perceptual') {
+    return res.status(410).json({
+      error: 'the perceptual duplicate mode was removed',
+      hint: 'use "exact" or "seed" here, or the per-image similar search: GET /api/images/:id/similar',
+    });
+  }
   try {
-    const groups = type === 'perceptual'
-      ? findPerceptualDuplicates(Number(threshold))
-      : type === 'seed'
-        ? findSeedDuplicates()
-        : findExactDuplicates();
+    const groups = type === 'seed' ? findSeedDuplicates() : findExactDuplicates();
     res.json({ groups, total: groups.length });
   } catch (err) {
     res.status(500).json({ error: err.message });

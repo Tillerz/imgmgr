@@ -1,5 +1,4 @@
 import db from './db.js';
-import { hammingDistance } from './thumbnails.js';
 
 // Returns groups of images with identical file content
 export function findExactDuplicates() {
@@ -20,37 +19,11 @@ export function findExactDuplicates() {
   return groups;
 }
 
-// Returns groups of images that look visually similar (perceptual hash distance <= threshold)
-export function findPerceptualDuplicates(threshold = 8) {
-  const rows = db.prepare(`
-    SELECT id, path, filename, folder_path, size, mtime, width, height, favorite, phash, file_hash
-    FROM images WHERE phash IS NOT NULL AND trashed_at IS NULL
-    ORDER BY id
-  `).all();
-
-  const used = new Set();
-  const groups = [];
-
-  for (let i = 0; i < rows.length; i++) {
-    if (used.has(rows[i].id)) continue;
-    const group = [rows[i]];
-    used.add(rows[i].id);
-
-    for (let j = i + 1; j < rows.length; j++) {
-      if (used.has(rows[j].id)) continue;
-      if (rows[i].file_hash === rows[j].file_hash) continue; // already caught by exact
-      if (hammingDistance(rows[i].phash, rows[j].phash) <= threshold) {
-        group.push(rows[j]);
-        used.add(rows[j].id);
-      }
-    }
-
-    if (group.length > 1) {
-      groups.push({ type: 'perceptual', images: group });
-    }
-  }
-  return groups;
-}
+// NOTE: a "perceptual" duplicate mode used to live here. It compared every image
+// against every other one — O(n²), ~4.8 billion comparisons at 98k images, which
+// blocked the (single-threaded, synchronous) server for roughly two hours and
+// still produced poor groupings. Removed. Per-image "find similar" from the
+// lightbox covers the same need cheaply, since it scans against one hash.
 
 // Returns groups of images sharing the same seed (last number before extension in filename)
 export function findSeedDuplicates() {
