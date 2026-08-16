@@ -28,12 +28,13 @@ server/           Express API + all domain logic
   meta.js         PNG tEXt / WebP+JPEG EXIF -> prompts + generation params
   thumbnails.js   sharp thumbnails, DCT pHash, md5, hammingDistance
   duplicates.js   exact / seed grouping (perceptual mode removed — was O(n²))
+  phrases.js      mines recurring phrases from prompts -> `phrase_counts` (derived cache)
   trash.js        soft delete: trash / restore / purge
   caption.js      SDNext VQA captioning
   migrate.js      one-time backfills (guarded, run at startup)
   watcher.js      chokidar on today's dated folder (opt-in)
   events.js       SSE client registry + broadcast
-  routes/         images.js (the big one), folders.js, duplicates.js, tags.js
+  routes/         images.js (the big one), folders.js, duplicates.js, tags.js, phrases.js
 client/
   style.css       base + "Classic" theme (the tokens live in `:root`)
   theme-modern.css  "Modern" theme, entirely scoped to html[data-theme="modern"]
@@ -41,7 +42,7 @@ client/src/
   main.jsx        React root + QueryClient
   App.jsx         all app state, pagination, bulk actions
   api.js          thin fetch wrapper per endpoint — the only place URLs live
-  components/     Toolbar, FolderTree, TileGrid, ImageViewer, DuplicatePanel, StarRating
+  components/     Toolbar, FolderTree, PhrasePanel, TileGrid, ImageViewer, DuplicatePanel, StarRating
 docs/API.md       full HTTP API reference — update when routes change
 ```
 
@@ -99,6 +100,26 @@ Boundaries that are real:
   `parameters` client-side (`parseSource` in `ImageViewer.jsx`). When a raw source exists, use its
   parse even if a field is empty.
 - **Captions are searched only via the `caption:` prefix**, never by a bare search term.
+- **A phrase count must never exceed what clicking it returns.** `phrases.js` normalises prompts
+  (underscores -> spaces, weights and LoRA tags stripped), so it folds `arabic_eyeliner` into
+  `arabic eyeliner`; a literal search then found 2,212 images where the panel promised 16,263.
+  That is why the panel emits `phrase:` and not `prompt:` — `LOOSE_FIELDS` in `routes/images.js`
+  leaves the word gaps as LIKE's `_` wildcard. Change either side and re-check both directions;
+  under-counting is acceptable, over-promising is not.
+- **`phrase_counts` is a derived cache, never a source of truth.** It is rebuilt wholesale and may
+  be dropped at any time. It is *not* updated by a scan — new images need an explicit rebuild.
+- **A theme must not create a stacking context on a container that holds a popover.**
+  `backdrop-filter`, `filter`, `opacity < 1`, `transform` and `will-change` all do. The Modern
+  theme's `backdrop-filter` on `.toolbar` trapped `.move-menu`'s `z-index: 200` inside the bar, and
+  the tile grid (a later sibling) painted over the open Move/Tag menus. The fix belongs in
+  `style.css`, not the theme: `.toolbar` carries `position: relative; z-index: 5`. Layers are
+  header 10 > toolbar 5 > grid, lightbox 1000.
+- **`tags.source` records provenance, the tag name never does.** A phrase promoted via
+  `POST /api/phrases/tag` is stored with `source='phrase'` but keeps a plain name, so it behaves
+  like any hand-made tag everywhere. Undo (`DELETE /api/phrases/tag`) must stay scoped to
+  `source='phrase'` — a hand-made tag of the same name has to survive it. Do not add a name prefix
+  or a second tag list; promotion is one phrase at a time precisely so the tag list stays curated
+  (auto-promoting everything would be ~47k tags / 6.7M rows on this library).
 - **npm 12 blocks install scripts**; native deps are pre-approved in `package.json` `allowScripts`.
   After bumping `better-sqlite3` / `sharp` / `esbuild`, update that map.
 
@@ -112,6 +133,7 @@ it to force a re-run.
 | `PRAGMA user_version` | 1 | discrete generation params for facet filters |
 | `app_meta.phash_version` | 2 | pHash recompute after switching dHash -> DCT |
 | `app_meta.prompt_fix_version` | 1 | re-extract prompts + raw metadata |
+| `app_meta.phrase_index_version` | 1 | rebuild `phrase_counts` (not a migration — derived data, rebuilt in `index.js` 5 s after listen) |
 
 Schema changes use `PRAGMA table_info` + `ALTER TABLE` in `db.js` (see `caption`, `missing_at`).
 

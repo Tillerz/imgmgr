@@ -31,6 +31,7 @@ A browser-based image manager built for large collections of AI-generated images
   - *Seed* — same generation seed in the filename (might match non-similar images!)
 - **Live updates** — watches today's output folder via SSE; a banner appears when new images arrive
 - **Metadata search** — filter by filename, prompt text, or arbitrary EXIF key/value, with multi-term AND, exclusions (`-term`), and quoted phrases; target a single field with `caption:` / `prompt:` / `name:` prefixes
+- **[Prompt phrases](#prompt-phrases)** — the concepts recurring most in your prompts, counted and clickable, so you can browse the library instead of guessing search terms
 - Reads SD metadata from PNG `tEXt` chunks and WebP/JPEG EXIF (positive prompt, negative prompt, seed, steps, etc.)
 
 ## Requirements
@@ -155,13 +156,15 @@ The search bar matches against both the **filename** and the **positive prompt**
 | `caption:castle` | have `castle` in the **caption** only |
 | `caption:"golden hour"` | have the phrase `golden hour` in the caption |
 | `dog -caption:cartoon` | match `dog` (filename/prompt) but exclude `cartoon` captions |
+| `phrase:"arabic eyeliner"` | use that prompt concept, however it is spelled |
 
 - **Space means AND** — every included term must be present.
 - **`-` excludes** a term. It works attached (`-blurry`) or spaced (`- blurry`), and can be combined with quotes (`-"low quality"`).
 - **`+` is optional** and simply marks an included term; a plain space already implies it.
 - **Quotes** group multiple words into a single phrase. Without quotes, each word is matched independently.
-- **Field prefixes** restrict a single term to one field: `caption:`, `prompt:`, or `name:` (alias `file:`). Unprefixed terms search filename + prompt as usual, and [captions](#ai-captions) are searched **only** when you explicitly write `caption:`, so they never dilute an ordinary prompt search. An unrecognised prefix (e.g. `steps:30`) is treated as a literal term.
-- Terms are matched literally, so wildcard characters (`%`, `_`) and hyphenated words like `close-up` are treated as-is.
+- **Field prefixes** restrict a single term to one field: `caption:`, `prompt:`, `name:` (alias `file:`), or `phrase:`. Unprefixed terms search filename + prompt as usual, and [captions](#ai-captions) are searched **only** when you explicitly write `caption:`, so they never dilute an ordinary prompt search. An unrecognised prefix (e.g. `steps:30`) is treated as a literal term.
+- **`phrase:` is the forgiving one.** It searches the prompt like `prompt:` does, but each space or hyphen matches any single character, so `phrase:"arabic eyeliner"` also finds the Danbooru-style `arabic_eyeliner`. This is what the [phrase panel](#prompt-phrases) uses. Use `prompt:` when you want an exact match.
+- Terms are otherwise matched literally, so wildcard characters (`%`, `_`) and hyphenated words like `close-up` are treated as-is.
 
 ### Viewing an image
 
@@ -241,6 +244,42 @@ Both remember their state across sessions.
 ### Where you left off
 
 The grid remembers its scroll position and restores it when you come back — per view, so changing folder, search or filters starts at the top as you'd expect, while returning to a view you were reading puts you back in place. If the saved spot is deep into the library, imgmgr pulls the pages needed to reach it (bounded, so a stale position can't page through everything).
+
+### Prompt phrases
+
+At the bottom of the folder sidebar, **Prompt phrases** lists the phrases that recur most often across your library, with the number of images using each. Click one to filter the grid by it. It's a way to *browse* what your prompts actually contain instead of guessing at a search term — and to notice concepts you'd forgotten you use.
+
+- **Filter phrases…** narrows the list by substring.
+- **2+ words only** (on by default) hides bare nouns like `hair` or `eyes` in favour of phrases that describe something: `regency era`, `blurred background`, `arabic eyeliner`.
+- **Rebuild** re-reads every prompt. Do this after importing a batch of new images; the index is not updated automatically by a scan.
+
+Clicking a phrase writes nothing — it only fills the search bar with a `phrase:` term, which you can then edit or combine with anything else.
+
+#### Turning a phrase into a real tag
+
+Hover a phrase and click **+** to promote it: the phrase becomes an ordinary tag, applied to every image whose prompt uses it. It then appears in the tag dropdown and on each image's tag list, and can be filtered like any other tag. The **+** turns into a **✓**; click that to remove the tag again from every image.
+
+This is deliberately one phrase at a time. Auto-promoting everything would mean **46,977 tags across 6.7 million rows** on a library this size — the tag dropdown would become unusable and the handful of tags you chose by hand would be lost in it. Tags are worth most for what the prompt *cannot* tell you (which person, which shoot, which keeper); the phrase panel already covers what the prompt does say.
+
+Promoted tags are **not renamed or prefixed**. A tag is a tag — `regency era` searches, filters and displays exactly like `ballroom`. imgmgr only records where each tag row came from, in a `source` column, so that:
+
+- removing a promoted tag takes out the whole batch in one click, and
+- if you had already made a tag by hand with the same name, **your version survives** that removal.
+
+> Promoting a common phrase can write tens of thousands of rows in one click (`blurred background` = 14,671 images). It is instant and fully undoable, but it is a real change to your library, not a filter — so above **500 images** imgmgr asks you to confirm first. Smaller promotions go through immediately.
+
+**How phrases are found.** Prompts come in two dialects, often in the same library: tag lists (`1woman, blonde hair, forest`) and prose (`…a woman with long red hair in a messy high ponytail…`). Both are cut on commas first, since grammar commas chunk prose much as tag commas chunk a tag list. A short chunk is kept whole, because it is already a concept. A long one is split at function words — `a`, `with`, `in` — into runs of content words, and each run contributes itself plus its endings:
+
+```text
+"a woman with long red hair in a messy high ponytail"
+  -> woman | long red hair | red hair | hair | messy high ponytail | high ponytail | ponytail
+```
+
+Endings and not every fragment, because in English the noun comes last: `red hair` is a concept, `long red` is not. No grammar rules and no language library are involved beyond that — **frequency decides.** A real concept recurs thousands of times across the library; an accidental word pair does not, and a phrase seen fewer than three times is dropped. Finally, a phrase that is only a fragment of an equally common longer one is hidden: if `regency era` appears 32,735 times and `era` 33,003, you see just `regency era`.
+
+The counts are a **floor, not an exact figure** — clicking a phrase can return somewhat more images than the number shown, because the search also matches the phrase inside longer ones. It will not return fewer.
+
+> Building the index takes about **4 seconds per 100,000 prompts** and happens automatically a few seconds after the server starts, but only the first time (or after an upgrade changes how phrases are cut).
 
 ### Find similar images
 
@@ -376,6 +415,7 @@ imgmgr/
 │   ├── thumbnails.js     # Sharp thumbnail generation, DCT pHash, file hash
 │   ├── caption.js        # AI captioning via the SDNext VQA endpoint
 │   ├── duplicates.js     # Exact / seed duplicate detection
+│   ├── phrases.js        # Mines recurring phrases out of prompts
 │   ├── trash.js          # Soft-delete: trash / restore / purge
 │   ├── watcher.js        # Chokidar file watcher (today's folder only)
 │   ├── events.js         # SSE broadcast utility
@@ -383,6 +423,7 @@ imgmgr/
 │       ├── images.js     # Image list/filter, ratings, tags, trash, facets, similar, caption
 │       ├── folders.js    # Folder listing and creation
 │       ├── duplicates.js # Duplicate find and delete endpoints
+│       ├── phrases.js    # Top-phrase list and index rebuild
 │       └── tags.js       # Global tag listing and bulk add/remove
 ├── client/
 │   ├── src/
@@ -392,6 +433,7 @@ imgmgr/
 │   │   └── components/
 │   │       ├── Toolbar.jsx
 │   │       ├── FolderTree.jsx
+│   │       ├── PhrasePanel.jsx
 │   │       ├── TileGrid.jsx
 │   │       ├── ImageViewer.jsx
 │   │       ├── StarRating.jsx

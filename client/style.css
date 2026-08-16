@@ -81,17 +81,22 @@ html, body, #root {
 }
 
 /* --- Sidebar ------------------------------------------------ */
+/* A column so the folder tree takes the free space and scrolls on its own,
+   which keeps the phrase panel pinned to the bottom instead of sitting below
+   a very long list of dated folders. */
 .sidebar {
   width: 220px;
   min-width: 160px;
   max-width: 320px;
   background: var(--bg-secondary);
   border-right: 1px solid var(--border);
-  overflow-y: auto;
+  overflow: hidden;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.folder-tree { padding: 6px 0; }
+.folder-tree { padding: 6px 0; flex: 1; min-height: 0; overflow-y: auto; }
 
 .folder-tree-header {
   display: flex;
@@ -175,6 +180,13 @@ html, body, #root {
 }
 
 /* --- Toolbar ----------------------------------------------- */
+/* `position` + `z-index` are load-bearing, not decoration: the Move/Tag
+   dropdowns are absolutely positioned inside this bar. A theme that gives the
+   toolbar a backdrop-filter (Modern does) makes it a *stacking context*, which
+   traps `.move-menu`'s z-index inside the bar — the tile grid, a later sibling,
+   then paints over the open menu. Pinning the toolbar's own layer above the
+   grid fixes it for every theme at once. Stays below `.app-header` (10) and far
+   below the lightbox (1000). */
 .toolbar {
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
@@ -183,6 +195,8 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  position: relative;
+  z-index: 5;
 }
 
 .toolbar-row {
@@ -940,6 +954,114 @@ html, body, #root {
 .theme-picker { margin-left: auto; }
 
 /* --- Collapsible folder sidebar ----------------------------- */
+/* --- Prompt phrases panel ------------------------------------ */
+/* Pinned to the bottom of the sidebar. Collapsed by default: the list is only
+   fetched once it is opened, so it costs nothing until asked for. */
+.phrase-panel {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.phrase-panel.open { max-height: 55%; }
+
+.phrase-header {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 7px 12px;
+  border: 0; background: transparent; cursor: pointer;
+  color: var(--text-muted);
+  font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  text-align: left;
+}
+.phrase-header:hover { color: var(--text); }
+.phrase-caret { font-size: 9px; }
+
+.phrase-body {
+  display: flex; flex-direction: column; min-height: 0;
+  padding: 0 8px 6px;
+}
+
+.phrase-filter {
+  width: 100%; padding: 4px 7px; margin-bottom: 5px;
+  background: var(--bg-tertiary); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  font-size: 12px;
+}
+
+.phrase-opt {
+  display: flex; align-items: center; gap: 5px;
+  margin-bottom: 5px; cursor: pointer;
+  font-size: 11px; color: var(--text-muted);
+}
+
+.phrase-list {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto; min-height: 0;
+}
+
+.phrase-row { display: flex; align-items: stretch; gap: 2px; }
+.phrase-row:hover .phrase-tag-btn { opacity: 1; }
+
+/* [+] promote to a real tag. Hidden until hover so the list stays a list, but
+   always visible once the phrase IS a tag, since that is state worth seeing. */
+.phrase-tag-btn {
+  flex-shrink: 0; width: 20px;
+  border: 0; border-radius: 4px; background: transparent;
+  color: var(--text-muted); cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 0;
+  opacity: 0; transition: opacity 0.12s, color 0.12s;
+}
+.phrase-tag-btn:hover:not(:disabled) { color: var(--accent); background: var(--bg-tertiary); }
+.phrase-tag-btn:disabled { opacity: 1; cursor: default; }
+.phrase-tag-btn.on { opacity: 1; color: var(--accent); }
+
+.phrase-note {
+  margin-top: 5px; padding: 4px 6px;
+  border-radius: 4px; background: var(--bg-tertiary);
+  font-size: 10px; color: var(--text-muted); line-height: 1.4;
+}
+
+.phrase-item {
+  display: flex; align-items: baseline; gap: 6px;
+  flex: 1; min-width: 0; padding: 3px 6px;
+  border: 0; border-radius: 4px; background: transparent;
+  color: var(--text); cursor: pointer;
+  font-size: 12px; text-align: left;
+}
+.phrase-item:hover { background: var(--bg-tertiary); }
+.phrase-item.active { background: var(--accent); color: #fff; }
+
+.phrase-text {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.phrase-count {
+  flex-shrink: 0;
+  font-size: 10px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.phrase-item.active .phrase-count { color: rgba(255, 255, 255, 0.8); }
+
+.phrase-empty { padding: 6px; font-size: 11px; color: var(--text-muted); }
+
+.phrase-foot {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 6px; padding-top: 5px; margin-top: 4px;
+  border-top: 1px solid var(--border);
+  font-size: 10px; color: var(--text-muted);
+}
+
+.phrase-rebuild {
+  padding: 2px 7px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg-tertiary); color: var(--text-muted);
+  font-size: 10px; cursor: pointer;
+}
+.phrase-rebuild:hover:not(:disabled) { color: var(--text); }
+.phrase-rebuild:disabled { opacity: 0.6; cursor: default; }
+
 .sidebar-toggle {
   display: block; width: 100%;
   padding: 5px 8px; border: 0; border-bottom: 1px solid var(--border);

@@ -4,6 +4,7 @@ import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { api } from './api.js';
 import usePersistentState from './usePersistentState.js';
 import FolderTree from './components/FolderTree.jsx';
+import PhrasePanel from './components/PhrasePanel.jsx';
 import Toolbar from './components/Toolbar.jsx';
 import TileGrid from './components/TileGrid.jsx';
 import ImageViewer from './components/ImageViewer.jsx';
@@ -438,6 +439,10 @@ export default function App() {
               <FolderTree
                 currentFolder={currentFolder}
                 onNavigate={f => { setCurrentFolder(f); setSelectedIds(new Set()); }}
+              />
+              <PhrasePanel
+                activeSearch={search}
+                onPick={term => { setSearch(term); setSelectedIds(new Set()); }}
               />
             </aside>
           ) : (

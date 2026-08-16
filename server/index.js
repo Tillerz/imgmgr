@@ -11,6 +11,8 @@ import imageRoutes from './routes/images.js';
 import folderRoutes from './routes/folders.js';
 import duplicateRoutes from './routes/duplicates.js';
 import tagRoutes from './routes/tags.js';
+import phraseRoutes from './routes/phrases.js';
+import { rebuildPhraseIndex, phraseIndexState, PHRASE_INDEX_VERSION } from './phrases.js';
 import { ensureThumbnail } from './thumbnails.js';
 import { addClient, broadcast } from './events.js';
 
@@ -85,6 +87,7 @@ app.use('/api/images', imageRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api/duplicates', duplicateRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/phrases', phraseRoutes);
 
 // Scan endpoint
 app.post('/api/scan', async (req, res) => {
@@ -151,6 +154,19 @@ app.listen(config.port, () => {
   recomputePrompts(({ done, total }) => process.stdout.write(`\rFixing prompts ${done}/${total}...`))
     .then((r) => { if (!r.skipped) console.log(`\nPrompt fix: ${r.updated} updated, ${r.failed} failed`); })
     .catch((e) => console.error('Prompt fix error:', e));
+  // Prompt-phrase index for the suggestion panel. Derived data, so it is simply
+  // rebuilt rather than migrated. The rebuild is synchronous (~4 s on 100k
+  // prompts) and would block the event loop, so it is deferred past startup and
+  // only runs when the index is missing or was built by an older version.
+  setTimeout(() => {
+    try {
+      const st = phraseIndexState();
+      if (st.ready && st.version === PHRASE_INDEX_VERSION) return;
+      const r = rebuildPhraseIndex();
+      console.log(`Phrase index: ${r.stored} phrases from ${r.prompts} prompts (${r.ms} ms)`);
+    } catch (e) { console.error('Phrase index error:', e); }
+  }, 5000).unref?.();
+
   if (config.scanOnStart) {
     console.log('Starting initial scan...');
     runScan(({ indexed, phase, hashed, total }) => {

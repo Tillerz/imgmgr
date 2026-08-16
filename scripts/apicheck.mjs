@@ -16,6 +16,7 @@ import imageRoutes from '../server/routes/images.js';
 import folderRoutes from '../server/routes/folders.js';
 import duplicateRoutes from '../server/routes/duplicates.js';
 import tagRoutes from '../server/routes/tags.js';
+import phraseRoutes from '../server/routes/phrases.js';
 
 const PORT = 3997; // deliberately not 3000 — never touch the user's server
 
@@ -25,6 +26,7 @@ app.use('/api/images', imageRoutes);
 app.use('/api/folders', folderRoutes);
 app.use('/api/duplicates', duplicateRoutes);
 app.use('/api/tags', tagRoutes);
+app.use('/api/phrases', phraseRoutes);
 const srv = app.listen(PORT);
 
 const paths = process.argv.slice(2);
@@ -35,6 +37,7 @@ const targets = paths.length ? paths : [
   '/api/images/meta/keys',
   '/api/folders',
   '/api/tags',
+  '/api/phrases?limit=3&minWords=2',
 ];
 
 // Keep smoke-test output short; print full bodies only for explicit requests.

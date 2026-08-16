@@ -66,6 +66,16 @@ export const api = {
   removeTag: (id, tag) => fetch(`/api/images/${id}/tags/${encodeURIComponent(tag)}`, {
     method: 'DELETE',
   }).then(json),
+  phrases: (params) => fetch('/api/phrases?' + new URLSearchParams(params)).then(json),
+  rebuildPhrases: () => fetch('/api/phrases/rebuild', { method: 'POST' }).then(json),
+  promotePhrase: (phrase) => fetch('/api/phrases/tag', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phrase }),
+  }).then(json),
+  demotePhrase: (tag) => fetch('/api/phrases/tag', {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tag }),
+  }).then(json),
   allTags: () => fetch('/api/tags').then(json),
   bulkAddTag: (ids, tag) => fetch('/api/tags/bulk', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },

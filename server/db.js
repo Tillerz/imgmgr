@@ -55,6 +55,20 @@ db.exec(`
     FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
   );
 
+  -- Migration markers and other small key/value state. Also created by
+  -- migrate.js; declared here so any module can read it before migrations run.
+  CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);
+
+  -- Recurring phrases mined from positive prompts (see phrases.js). A derived
+  -- cache, never a source of truth: it is rebuilt wholesale and can be dropped
+  -- at any time without losing anything.
+  CREATE TABLE IF NOT EXISTS phrase_counts (
+    phrase TEXT PRIMARY KEY,
+    count  INTEGER NOT NULL,
+    words  INTEGER NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_phrase_count   ON phrase_counts(count DESC);
   CREATE INDEX IF NOT EXISTS idx_images_folder   ON images(folder_path);
   CREATE INDEX IF NOT EXISTS idx_images_favorite ON images(favorite);
   CREATE INDEX IF NOT EXISTS idx_images_mtime    ON images(mtime);
@@ -75,6 +89,14 @@ if (!imageCols.includes('caption'))        db.exec('ALTER TABLE images ADD COLUM
 // unmounted NFS share — still browses normally; cleared when the file returns.
 // Rows are only ever removed by an explicit "delete orphaned data" request.
 if (!imageCols.includes('missing_at'))     db.exec('ALTER TABLE images ADD COLUMN missing_at INTEGER');
+// Where a tag came from. NULL/'user' is hand-made; 'phrase' was promoted from
+// the prompt-phrase panel. The tag *name* is deliberately not marked, so a
+// promoted tag reads and searches exactly like any other — the column only
+// exists so the UI can badge it and so "undo" can remove the whole batch
+// without touching a hand-made tag of the same name.
+const tagCols = db.prepare('PRAGMA table_info(tags)').all().map(c => c.name);
+if (!tagCols.includes('source')) db.exec("ALTER TABLE tags ADD COLUMN source TEXT");
+db.exec('CREATE INDEX IF NOT EXISTS idx_tags_source ON tags(source)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_images_trashed ON images(trashed_at)');
 db.exec('CREATE INDEX IF NOT EXISTS idx_images_missing ON images(missing_at)');
 

@@ -284,6 +284,81 @@ Soft-delete the given images (to trash). Starred images are protected.
 
 ---
 
+## Prompt phrases
+
+Recurring phrases mined from positive prompts, used by the sidebar suggestion
+panel. **Read-only with respect to your library** — nothing here changes images,
+tags or metadata. See [`server/phrases.js`](../server/phrases.js) for how a
+prompt is cut into phrases.
+
+### `GET /api/phrases`
+
+| Param | Default | Meaning |
+| --- | --- | --- |
+| `limit` | `200` | Max phrases returned (capped at 500) |
+| `q` | — | Substring filter on the phrase |
+| `min` | `0` | Minimum image count |
+| `minWords` | `1` | Minimum words per phrase — `2` hides bare nouns like `hair` |
+
+**Response:**
+
+```json
+{
+  "ready": true,
+  "stored": 46977,
+  "builtAt": 1786883894628,
+  "version": 1,
+  "phrases": [
+    { "phrase": "gorgeous hips", "count": 34872, "words": 2 },
+    { "phrase": "regency era",   "count": 32735, "words": 2 }
+  ]
+}
+```
+
+`ready: false` with an empty `phrases` array means the index has not been built
+yet. `count` is the number of images whose prompt uses the phrase.
+
+A phrase that is merely a fragment of a longer, near-equally-common one is
+dropped: if `regency era` appears 32,735 times and `era` 33,003, only the
+longer phrase is returned.
+
+### `POST /api/phrases/tag`
+
+Promote a phrase to a real tag: add it to every image whose prompt uses it.
+
+**Body:** `{ "phrase": "regency era" }` — must already exist in the index; this is
+not a general "tag everything matching arbitrary text" endpoint.
+**Response:** `{ "ok": true, "tag": "regency era", "tagged": 32735 }`.
+
+Matching uses the same loose [`phrase:`](#phrase--loose-word-gaps) rule the panel
+uses, so the number tagged agrees with the count that was shown. Trashed images
+are skipped. The rows are written with `source = 'phrase'`; the tag **name** is
+not marked, so it reads, searches and filters exactly like a hand-made tag.
+Re-running is a no-op (`INSERT OR IGNORE`).
+
+### `DELETE /api/phrases/tag`
+
+Undo a promotion.
+
+**Body:** `{ "tag": "regency era" }`
+**Response:** `{ "ok": true, "tag": "regency era", "removed": 32735 }`.
+
+Scoped to `source = 'phrase'`, so a hand-made tag sharing the name survives.
+
+### `POST /api/phrases/rebuild`
+
+Rebuild the index from every prompt in the library.
+
+**Response:** `{ "status": "ok", "prompts": 97860, "distinct": 87895, "stored": 46977, "ms": 3850 }`,
+or `{ "status": "already running" }`.
+
+> Synchronous, and roughly **4 s per 100k prompts** — it blocks the event loop
+> for that time. The server also rebuilds automatically at startup, 5 s after
+> listening, but only when the index is missing or was written by an older
+> `PHRASE_INDEX_VERSION`.
+
+---
+
 ## Scanning, events & config
 
 ### `POST /api/scan`
@@ -328,14 +403,28 @@ prompt**. It supports multiple terms, exclusions, phrases, and per-field prefixe
 | `caption:"golden hour"` | the phrase `golden hour` in the caption |
 | `dog -caption:cartoon` | `dog` (filename/prompt), excluding `cartoon` captions |
 | `prompt:sunset` / `name:00012` | restrict a term to the prompt / filename |
+| `phrase:"arabic eyeliner"` | the prompt concept, either spelling (see below) |
 
 **Field prefixes** (`field:term` or `field:"phrase"`) restrict a single term to
-one field: `caption`, `prompt`, `name` (alias `file`). Captions are searched
-**only** when explicitly prefixed, so they never dilute ordinary prompt searches.
-An unrecognised prefix (e.g. `steps:30`) is treated as a literal term.
+one field: `caption`, `prompt`, `name` (alias `file`), `phrase`. Captions are
+searched **only** when explicitly prefixed, so they never dilute ordinary prompt
+searches. An unrecognised prefix (e.g. `steps:30`) is treated as a literal term.
 
 The `-` operator works attached (`-blurry`) or spaced (`- blurry`). Wildcard
 characters (`%`, `_`) are matched literally.
+
+### `phrase:` — loose word gaps
+
+`phrase:` searches the positive prompt like `prompt:` does, except each **space
+or hyphen in the term matches any single character**. Prompts mix spellings for
+the same concept — `arabic eyeliner` and the Danbooru-style `arabic_eyeliner` —
+and [`GET /api/phrases`](#get-apiphrases) folds those into one entry. A literal
+search would then contradict the count the panel displayed: measured on a real
+library, `prompt:"arabic eyeliner"` found **2,212** images where the panel had
+promised **16,263**; `phrase:` finds **16,397**.
+
+This is the prefix the phrase panel emits when you click an entry. Use `prompt:`
+when you want an exact, literal match.
 
 ---
 

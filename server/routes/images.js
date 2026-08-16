@@ -13,7 +13,20 @@ const router = Router();
 // Search fields that can be targeted with a `field:term` prefix. Unprefixed
 // terms search the default set (filename + positive prompt). Captions are
 // opt-in via `caption:` so they never dilute ordinary prompt searches.
-const SEARCH_FIELDS = { caption: 'caption', prompt: 'positive_prompt', name: 'filename', file: 'filename' };
+// `phrase:` is `prompt:` with loose word gaps — see LOOSE_FIELDS below.
+const SEARCH_FIELDS = {
+  caption: 'caption', prompt: 'positive_prompt', name: 'filename', file: 'filename',
+  phrase: 'positive_prompt',
+};
+
+// Fields where a space in the term matches any single separator. Prompts mix
+// spellings for the same concept — "arabic eyeliner" and the Danbooru-style
+// "arabic_eyeliner" — and the phrase panel folds them into one entry, so a
+// literal search would find far fewer images than the panel promised (measured:
+// 16,263 counted vs 2,212 found). SQLite's LIKE already has a single-character
+// wildcard, `_`, so leaving the gaps unescaped matches space, underscore and
+// hyphen alike.
+const LOOSE_FIELDS = new Set(['phrase']);
 
 // Parse a search string into include/exclude terms.
 //   space = AND (all include terms must match)
@@ -62,17 +75,23 @@ export function buildSearchClause(search, col = '') {
     if (field) return [`COALESCE(${col}${SEARCH_FIELDS[field]}, '')`];
     return [`${col}filename`, `COALESCE(${col}positive_prompt, '')`];
   };
+  // A loose field turns each word gap into LIKE's single-character wildcard.
+  const pattern = (term, field) => {
+    const escaped = likeEscape(term);
+    return `%${LOOSE_FIELDS.has(field) ? escaped.replace(/\\_|[ -]/g, '_') : escaped}%`;
+  };
+
   const clauses = [];
   const params = [];
   for (const { term, field } of include) {
     const exprs = colsFor(field);
     clauses.push('(' + exprs.map(e => `${e} LIKE ? ESCAPE '\\'`).join(' OR ') + ')');
-    for (let i = 0; i < exprs.length; i++) params.push(`%${likeEscape(term)}%`);
+    for (let i = 0; i < exprs.length; i++) params.push(pattern(term, field));
   }
   for (const { term, field } of exclude) {
     const exprs = colsFor(field);
     clauses.push('(' + exprs.map(e => `${e} NOT LIKE ? ESCAPE '\\'`).join(' AND ') + ')');
-    for (let i = 0; i < exprs.length; i++) params.push(`%${likeEscape(term)}%`);
+    for (let i = 0; i < exprs.length; i++) params.push(pattern(term, field));
   }
   return { clause: clauses.join(' AND '), params };
 }
