@@ -43,6 +43,8 @@ export default function Toolbar({
   tagFilter, onTagFilter,
   facets = {}, onFacet,
   missingFilter, onMissingFilter, onPurgeMissing,
+  captionFilter, onCaptionFilter,
+  favoriteExact, onFavoriteExact,
   selectedCount, total, loaded,
   onSelectAll, onDeselectAll,
   onDeleteSelected,
@@ -54,6 +56,8 @@ export default function Toolbar({
   onBulkTag,
   hasNewImages,
   onRefreshNew,
+  slideScope, onSlideScope, slideSpeed, onSlideSpeed,
+  slideshowRunning, onStartSlideshow, onStopSlideshow,
 }) {
   const [showMoveMenu, setShowMoveMenu] = useState(false);
   const [showTagMenu, setShowTagMenu] = useState(false);
@@ -65,9 +69,16 @@ export default function Toolbar({
     enabled: showMoveMenu,
   });
 
+  // The counts must use the same filters as the grid, or the numbers next to the
+  // star buttons won't match what a click actually shows.
+  const countParams = {
+    folder: currentFolder, search, tag: tagFilter, facets: JSON.stringify(facets),
+    ...(missingFilter ? { missing: missingFilter } : {}),
+    ...(captionFilter ? { caption: captionFilter } : {}),
+  };
   const { data: counts = {} } = useQuery({
-    queryKey: ['favCounts', currentFolder, search],
-    queryFn: () => api.favoriteCounts({ folder: currentFolder, search }),
+    queryKey: ['favCounts', countParams],
+    queryFn: () => api.favoriteCounts(countParams),
     staleTime: 10_000,
   });
 
@@ -121,11 +132,31 @@ export default function Toolbar({
         <FacetSelect label="Sampler" facetKey="Sampler" value={facets.Sampler} onFacet={onFacet} />
         <FacetSelect label="Steps" facetKey="Steps" value={facets.Steps} onFacet={onFacet} />
 
+        <select
+          className="select-sm"
+          value={captionFilter}
+          onChange={e => onCaptionFilter(e.target.value)}
+          title="Filter by whether an AI caption has been generated"
+        >
+          <option value="">Caption: any</option>
+          <option value="1">Has caption</option>
+          <option value="0">No caption</option>
+        </select>
+
         <div className="star-filter">
-          <span className="filter-label">Min ★</span>
+          {/* Toggles between "this rating and up" and "exactly this rating". */}
           <button
-            className={`star-filter-btn ${favoriteMin === 0 ? 'active' : ''}`}
-            onClick={() => onFavoriteMin(0)}
+            className="star-mode-btn"
+            onClick={() => onFavoriteExact(!favoriteExact)}
+            title={favoriteExact
+              ? 'Showing exactly this rating — click for "and up"'
+              : 'Showing this rating and up — click for "exactly"'}
+          >
+            {favoriteExact ? '= ★' : '≥ ★'}
+          </button>
+          <button
+            className={`star-filter-btn ${favoriteMin === 0 && !favoriteExact ? 'active' : ''}`}
+            onClick={() => { onFavoriteExact(false); onFavoriteMin(0); }}
           >
             All <span className="star-count">({totalCount})</span>
           </button>
@@ -134,12 +165,19 @@ export default function Toolbar({
               key={n}
               className={`star-filter-btn ${favoriteMin === n ? 'active' : ''}`}
               onClick={() => onFavoriteMin(n)}
+              title={favoriteExact ? `Exactly ${n} star(s)` : `${n} star(s) and up`}
             >
               {'★'.repeat(n)} <span className="star-count">({counts[n] ?? 0})</span>
             </button>
           ))}
           {unratedCount > 0 && (
-            <span className="unrated-count" title="Images with no stars">☆ {unratedCount}</span>
+            <button
+              className={`unrated-count ${favoriteExact && favoriteMin === 0 ? 'active' : ''}`}
+              onClick={() => { onFavoriteExact(true); onFavoriteMin(0); }}
+              title="Show only unrated images"
+            >
+              ☆ {unratedCount}
+            </button>
           )}
         </div>
       </div>
@@ -181,6 +219,37 @@ export default function Toolbar({
 
         <button className="btn btn-secondary btn-sm" onClick={onSelectAll}>All</button>
         <button className="btn btn-secondary btn-sm" onClick={onDeselectAll}>None</button>
+
+        <span className="slideshow-controls">
+          <select
+            className="select-sm"
+            value={slideScope}
+            onChange={e => onSlideScope(e.target.value)}
+            disabled={slideshowRunning}
+            title="Which images the slideshow plays"
+          >
+            <option value="folder">This view</option>
+            <option value="all">All images</option>
+            <option value="selected" disabled={!selectedCount}>
+              Selected{selectedCount ? ` (${selectedCount})` : ''}
+            </option>
+          </select>
+          <label className="slideshow-speed" title="Seconds each image stays on screen">
+            <input
+              type="range" min="1" max="20" step="1"
+              value={slideSpeed}
+              onChange={e => onSlideSpeed(Number(e.target.value))}
+            />
+            <span className="slideshow-speed-val">{slideSpeed}s</span>
+          </label>
+          <button
+            className={`btn btn-sm ${slideshowRunning ? 'btn-danger' : 'btn-secondary'}`}
+            onClick={slideshowRunning ? onStopSlideshow : onStartSlideshow}
+            title={slideshowRunning ? 'Stop the slideshow' : 'Play the images full screen, starting at the current one'}
+          >
+            {slideshowRunning ? '■ Stop' : '▶ Slideshow'}
+          </button>
+        </span>
 
         {selectedCount > 0 && (
           <>

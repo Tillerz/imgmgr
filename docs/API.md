@@ -34,6 +34,8 @@ List images with filtering, sorting, and pagination.
 | `folder` | — | Restrict to an exact `folder_path`. |
 | `sort` | `mtime-desc` | One of `mtime-desc`, `mtime-asc`, `name-asc`, `name-desc`, `fav-desc`, `fav-asc`. |
 | `favorite_min` | `0` | Only images with `favorite >= this`. |
+| `favorite_eq` | — | Only images with **exactly** this rating (`0` = unrated). Overrides `favorite_min`. |
+| `caption` | — | `1` = only images that have an AI caption, `0` = only those without. Blank captions count as none. |
 | `search` | — | Text filter over filename + positive prompt (captions via a `caption:` prefix). See [Search syntax](#search-syntax). |
 | `tag` | — | Only images carrying this tag. |
 | `facets` | — | JSON object of generation-param filters, e.g. `{"Model":"x","Sampler":"Euler a"}`. Multiple keys are ANDed. See [Facets](#facets). |
@@ -77,17 +79,24 @@ curl 'http://localhost:3000/api/images?facets=%7B%22Model%22%3A%22perfectdeliber
 
 Favorite-level histogram for the current filters — powers the `Min ★` counts.
 
-**Query:** `folder`, `search`, `facets` (same meaning as above).
+**Query:** the shared filter set minus the rating filters (it groups by rating):
+`folder`, `search`, `tag`, `facets`, `missing`, `caption`.
 
 **Response:** an object keyed by rating → count, e.g. `{ "0": 19254, "5": 1 }`.
 
 ### `GET /api/images/ids`
 
-All image ids matching the filters (used by "select all" to cover unloaded pages).
+All image ids matching the filters — used by "select all" and by the slideshow,
+both of which need to cover pages the client hasn't loaded.
 
-**Query:** `folder`, `favorite_min`, `search`, `tag`, `facets`.
+**Query:** the same filter set as `GET /api/images` — `folder`, `favorite_min`,
+`favorite_eq`, `search`, `tag`, `facets`, `missing`, `caption`. Returned in the
+same order as the default listing (`mtime DESC, id DESC`).
 
 **Response:** `number[]`.
+
+> `GET /api/images`, `/counts` and `/ids` share one filter builder, so all three
+> always agree on what the current view contains.
 
 ### `GET /api/images/:id`
 

@@ -100,7 +100,7 @@ function Tile({ image, selected, onSelect, onOpen, onFavoriteChange, sortedIds, 
   );
 }
 
-export default function TileGrid({ images, selectedIds, onSelect, onOpen, onFavoriteChange, onLoadMore, hasMore }) {
+export default function TileGrid({ images, selectedIds, onSelect, onOpen, onFavoriteChange, onLoadMore, hasMore, viewKey = '' }) {
   const wrapRef = useRef(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [scrollTop, setScrollTop] = useState(0);
@@ -118,12 +118,62 @@ export default function TileGrid({ images, selectedIds, onSelect, onOpen, onFavo
     return () => ro.disconnect();
   }, []);
 
-  // Reset scroll to top when the result set is replaced (filters/folder/trash change).
-  const firstId = images[0]?.id;
+  // --- Scroll position memory -------------------------------------------
+  // Remembered per view (`viewKey` encodes the active filters), so reopening the
+  // app — or coming back from the trash — lands where you left off instead of at
+  // the top of 98k images. Changing filters is a different view and starts fresh.
+  const SCROLL_KEY = 'imgmgr.gridScroll';
+  const readSaved = () => {
+    try { return JSON.parse(localStorage.getItem(SCROLL_KEY) || 'null'); } catch { return null; }
+  };
+  const restoredRef = useRef(false);   // done (or given up) for this view
+  const attemptsRef = useRef(0);       // pages pulled in while seeking back
+
+  // A new view: reset, unless we have a saved position for exactly this one.
   useEffect(() => {
-    if (wrapRef.current) wrapRef.current.scrollTop = 0;
-    setScrollTop(0);
-  }, [firstId]);
+    restoredRef.current = false;
+    attemptsRef.current = 0;
+    const saved = readSaved();
+    if (!saved || saved.key !== viewKey || !saved.top) {
+      if (wrapRef.current) wrapRef.current.scrollTop = 0;
+      setScrollTop(0);
+      restoredRef.current = true;
+    }
+  }, [viewKey]);
+
+  // Seek back to the saved offset. A deep position needs more pages than the
+  // first fetch returns, so scroll as far as we can, pull the next page, and
+  // retry — bounded, so a stale offset can't spin through the whole library.
+  useEffect(() => {
+    if (restoredRef.current) return;
+    const el = wrapRef.current;
+    if (!el || !images.length) return;
+    const saved = readSaved();
+    if (!saved || saved.key !== viewKey) { restoredRef.current = true; return; }
+
+    const max = el.scrollHeight - el.clientHeight;
+    if (saved.top <= max) {
+      el.scrollTop = saved.top;
+      setScrollTop(saved.top);
+      restoredRef.current = true;
+    } else if (hasMore && attemptsRef.current < 40) {
+      attemptsRef.current++;
+      el.scrollTop = max;
+      setScrollTop(max);
+      onLoadMore?.();
+    } else {
+      restoredRef.current = true; // as close as we can get
+    }
+  }, [viewKey, images.length, size.height, hasMore, onLoadMore]);
+
+  // Persist the position once restoring is finished (debounced).
+  useEffect(() => {
+    if (!restoredRef.current || !viewKey) return;
+    const t = setTimeout(() => {
+      try { localStorage.setItem(SCROLL_KEY, JSON.stringify({ key: viewKey, top: Math.round(scrollTop) })); } catch {}
+    }, 400);
+    return () => clearTimeout(t);
+  }, [scrollTop, viewKey]);
 
   const onScroll = useCallback((e) => {
     const el = e.currentTarget;

@@ -82,21 +82,63 @@ const mkdirP = promisify(mkdir);
 const copyP = promisify(copyFile);
 const unlinkP = promisify(unlink);
 
-// Counts per favourite level — must be before /:id
-router.get('/counts', (req, res) => {
-  const { folder = '', search = '' } = req.query;
-  const conditions = ['i.trashed_at IS NULL'];
-  const joins = [];
-  const params = [];
-  if (folder) { conditions.push('i.folder_path = ?'); params.push(folder); }
+// The filter set shared by the list / counts / ids endpoints.
+//
+// These three must agree: `ids` drives "select all" and the slideshow, `counts`
+// drives the star-filter numbers, and the list is what you see. They used to
+// build their conditions separately and had already drifted (ids ignored
+// `missing`, counts ignored `tag`), so select-all could pick up rows the grid
+// was hiding. Keeping it in one place also guarantees conditions and params stay
+// in the same order.
+//
+// `favorites: false` for the counts endpoint, which groups by rating.
+// `skipFolder: true` for the trash view, which is not folder-scoped.
+function applyCommonFilters(req, joins, conditions, params, { favorites = true, skipFolder = false } = {}) {
+  const {
+    folder = '', favorite_min = 0, favorite_eq = '', search = '', tag = '',
+    missing = '', caption = '',
+  } = req.query;
+
+  if (folder && !skipFolder) { conditions.push('i.folder_path = ?'); params.push(folder); }
+
+  if (favorites) {
+    // favorite_eq pins an exact rating ("show me only the 3-star ones");
+    // favorite_min is the older "this rating and up".
+    if (favorite_eq !== '' && favorite_eq != null) {
+      conditions.push('i.favorite = ?');
+      params.push(Number(favorite_eq));
+    } else if (Number(favorite_min) > 0) {
+      conditions.push('i.favorite >= ?');
+      params.push(Number(favorite_min));
+    }
+  }
+
   if (search) {
     const s = buildSearchClause(search, 'i.');
     if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
   }
+  if (tag) { joins.push('JOIN tags tg ON tg.image_id = i.id'); conditions.push('tg.tag = ?'); params.push(tag); }
+
+  // Offline images stay in normal listings by default; 1 = only them, 0 = hide them.
+  if (String(missing) === '1') conditions.push('i.missing_at IS NOT NULL');
+  else if (String(missing) === '0') conditions.push('i.missing_at IS NULL');
+
+  // 1 = only captioned images, 0 = only uncaptioned. Blank captions count as none.
+  if (String(caption) === '1') conditions.push("i.caption IS NOT NULL AND trim(i.caption) <> ''");
+  else if (String(caption) === '0') conditions.push("(i.caption IS NULL OR trim(i.caption) = '')");
+
   applyFacets(req, joins, conditions, params);
+}
+
+// Counts per favourite level — must be before /:id
+router.get('/counts', (req, res) => {
+  const conditions = ['i.trashed_at IS NULL'];
+  const joins = [];
+  const params = [];
+  applyCommonFilters(req, joins, conditions, params, { favorites: false });
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const rows = db.prepare(
-    `SELECT i.favorite AS favorite, COUNT(*) as n FROM images i ${joins.join(' ')} ${where} GROUP BY i.favorite ORDER BY i.favorite`
+    `SELECT i.favorite AS favorite, COUNT(DISTINCT i.id) as n FROM images i ${joins.join(' ')} ${where} GROUP BY i.favorite ORDER BY i.favorite`
   ).all(...params);
   const counts = {};
   for (const row of rows) counts[row.favorite] = row.n;
@@ -105,23 +147,17 @@ router.get('/counts', (req, res) => {
 
 // All IDs matching current filters — used by select-all to cover unloaded pages
 router.get('/ids', (req, res) => {
-  const { folder = '', favorite_min = 0, search = '', tag = '' } = req.query;
   const params = [];
   const conditions = ['i.trashed_at IS NULL'];
   const joins = [];
-
-  if (folder) { conditions.push('i.folder_path = ?'); params.push(folder); }
-  if (Number(favorite_min) > 0) { conditions.push('i.favorite >= ?'); params.push(Number(favorite_min)); }
-  if (search) {
-    const s = buildSearchClause(search, 'i.');
-    if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
-  }
-  if (tag) { joins.push('JOIN tags tg ON tg.image_id = i.id'); conditions.push('tg.tag = ?'); params.push(tag); }
-  applyFacets(req, joins, conditions, params);
+  applyCommonFilters(req, joins, conditions, params);
 
   const join = joins.join(' ');
   const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
-  const rows = db.prepare(`SELECT DISTINCT i.id FROM images i ${join} ${where} ORDER BY i.mtime DESC`).all(...params);
+  // Same total order as the list endpoint, so a slideshow plays in grid order.
+  const rows = db.prepare(
+    `SELECT DISTINCT i.id FROM images i ${join} ${where} ORDER BY i.mtime DESC, i.id DESC`
+  ).all(...params);
   res.json(rows.map(r => r.id));
 });
 
@@ -164,18 +200,13 @@ function applyFacets(req, joins, conditions, params) {
 // List images with filtering, sorting, pagination
 router.get('/', (req, res) => {
   const {
-    folder = '',
     sort = 'mtime-desc',
-    favorite_min = 0,
-    search = '',
     meta_key = '',
     meta_value = '',
-    tag = '',
     trashed = '',
     limit = 100,
     offset = 0,
     max_id = '',
-    missing = '',
   } = req.query;
 
   const isTrash = String(trashed) === '1';
@@ -197,33 +228,14 @@ router.get('/', (req, res) => {
     : (db.prepare('SELECT MAX(id) AS m FROM images').get()?.m ?? 0);
   conditions.push('i.id <= ?');
   params.push(snapshot);
-  if (folder && !isTrash) {
-    conditions.push('i.folder_path = ?');
-    params.push(folder);
-  }
-  if (Number(favorite_min) > 0) {
-    conditions.push('i.favorite >= ?');
-    params.push(Number(favorite_min));
-  }
-  if (search) {
-    const s = buildSearchClause(search, 'i.');
-    if (s.clause) { conditions.push(s.clause); params.push(...s.params); }
-  }
+
   if (meta_key && meta_value) {
     joins.push('JOIN metadata m ON m.image_id = i.id');
     conditions.push('m.key = ? AND m.value LIKE ?');
     params.push(meta_key, `%${meta_value}%`);
   }
-  if (tag) {
-    joins.push('JOIN tags tg ON tg.image_id = i.id');
-    conditions.push('tg.tag = ?');
-    params.push(tag);
-  }
-  // Offline images stay in normal listings by default (so a disconnected drive
-  // still browses); `missing=1` narrows to just them, `missing=0` hides them.
-  if (String(missing) === '1') conditions.push('i.missing_at IS NOT NULL');
-  else if (String(missing) === '0') conditions.push('i.missing_at IS NULL');
-  applyFacets(req, joins, conditions, params);
+
+  applyCommonFilters(req, joins, conditions, params, { skipFolder: isTrash });
 
   const join = joins.join(' ');
 

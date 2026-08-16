@@ -248,9 +248,29 @@ html, body, #root {
 .unrated-count {
   font-size: 12px;
   color: var(--text-muted);
-  padding: 0 4px;
+  padding: 2px 6px;
   white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
 }
+.unrated-count:hover { border-color: var(--accent); color: var(--text-primary); }
+.unrated-count.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Flips the star buttons between "and up" and "exactly". */
+.star-mode-btn {
+  font-size: 12px;
+  padding: 2px 6px;
+  margin-right: 2px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+.star-mode-btn:hover { border-color: var(--accent); color: var(--text-primary); }
 
 .new-images-banner {
   padding: 5px 12px;
@@ -915,6 +935,33 @@ html, body, #root {
   min-width: 18px; text-align: center;
   font-variant-numeric: tabular-nums; color: var(--text);
 }
+
+/* --- Collapsible folder sidebar ----------------------------- */
+.sidebar-toggle {
+  display: block; width: 100%;
+  padding: 5px 8px; border: 0; border-bottom: 1px solid var(--border);
+  background: transparent; color: var(--text-muted);
+  font-size: 11px; text-align: right; cursor: pointer;
+}
+.sidebar-toggle:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+
+.sidebar-reopen {
+  flex-shrink: 0; width: 18px;
+  border: 0; border-right: 1px solid var(--border);
+  background: var(--bg-secondary); color: var(--text-muted);
+  font-size: 13px; cursor: pointer; padding: 0;
+}
+.sidebar-reopen:hover { color: var(--text); background: var(--bg-tertiary); }
+
+/* --- Slideshow ---------------------------------------------- */
+.slideshow-controls { display: inline-flex; align-items: center; gap: 6px; }
+.slideshow-speed { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.slideshow-speed input[type="range"] { width: 84px; cursor: pointer; }
+.slideshow-speed-val {
+  min-width: 26px; font-size: 12px; color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.viewer-slideshow-controls { display: inline-flex; align-items: center; gap: 6px; }
 
 /* --- Offline (missing) images ------------------------------- */
 .offline-banner {

@@ -14,7 +14,10 @@ A browser-based image manager built for large collections of AI-generated images
 - **Full-size lightbox** with a rich metadata sidebar — separate **Prompt / Negative prompt / Template** sections that are collapsible and resizable, LoRA and wildcard highlighting, a resizable panel width, and the generation params surfaced first
 - **Folder tree** — collapsible, with drag-and-drop move support, newest folders first
 - **Star ratings** (0–5) with per-level counts in the filter bar; rate from the grid, the lightbox, or the `0`–`5` keys
-- **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `F` toggles 5★, `Space` advances, `Del` deletes and advances
+- **Keyboard-driven lightbox** — arrow keys walk the *entire* result set (pages load as you go), `0`–`5` rate, `F` toggles 5★, `Space` advances, `Del` deletes and advances, `I` hides the info panel
+- **Slideshow** — play the current view, your selection, or the whole library full screen, 1–20 s per image, looping back to the start
+- **Picks up where you left off** — the grid remembers your scroll position per view across reloads
+- **Collapsible panels** — hide the folder tree (`B`) and the metadata sidebar (`I`) to view images on the full screen
 - **Copy prompt** — one click copies an image's positive prompt, negative prompt, or template, from a tile's hover button or the lightbox
 - **Trash & undo** — deletes are recoverable: images move to a trash you can restore from, and an Undo appears right after deleting
 - **Offline-media friendly** — if a drive or network share goes away, those images stay browsable (cached thumbnails, ratings, tags and metadata intact) and are just badged as offline; nothing is ever deleted without you asking
@@ -125,7 +128,10 @@ npm start       # serves dist/ via Express
 
 - The **folder tree** on the left lists all indexed folders. Click a folder to filter. Click the **▸** arrow to expand/collapse subfolders.
 - Use the **search bar** to filter by filename or positive-prompt text (see [Search syntax](#search-syntax) below).
-- Use the **Min ★** buttons to show only images at or above a star rating. Counts are shown next to each button.
+- Use the **★** buttons to filter by rating. Counts are shown next to each button, and they respect the other active filters.
+  - The **≥ ★** / **= ★** button flips between *this rating and up* and *exactly this rating* — handy when triaging, e.g. "show me only the 3-star ones".
+  - **☆ N** shows only unrated images.
+- The **Caption** dropdown narrows to images that do or don't have an [AI caption](#ai-captions) yet — the quickest way to see what's left to caption.
 - The **Model / Sampler / Steps** dropdowns filter by the SD generation parameters (see [Facet filters](#facet-filters)). They combine with search, folder, and each other.
 - The **sort dropdown** supports date, name, and star rating in both directions.
 
@@ -190,10 +196,38 @@ Navigate with the **← →** arrow buttons or keyboard arrow keys. Navigation s
 | `Space` | Advance to the next image |
 | `0`–`5` | Set the star rating (`0` clears it) |
 | `F` | Toggle 5★ on/off |
+| `I` | Show/hide the metadata panel |
+| `P` | Pause / resume the slideshow |
 | `Del` | Delete the current image (to trash) and jump to the next |
-| `Esc` | Close the lightbox |
+| `Esc` | Close the lightbox (also stops a slideshow) |
 
 Each prompt section (Prompt, Negative prompt, Template) has its own **Copy** button, and every tile shows a **copy-prompt** button (⧉) on hover — one click copies that image's positive prompt to the clipboard.
+
+### Slideshow
+
+Set the two controls in the toolbar, then press **▶ Slideshow**:
+
+- **Scope** — *This view* plays exactly what the grid is showing, so it respects the selected folder, search, star filter and facets. *All images* ignores every filter and plays the whole library. *Selected* plays only the images you've ticked, in grid order (greyed out until you select something).
+- **Speed slider** — 1 to 20 seconds per image.
+
+Playback opens the lightbox and starts at the image you already have open, or the first one you selected, or the very first image. When it reaches the end it **loops back to the start**.
+
+While it runs: **⏸ Pause** / **■ Stop** sit in the lightbox top bar, `P` or `Space` pauses and resumes, the arrow keys still step manually, and `Esc` closes the lightbox and stops the slideshow. Rating with `0`–`5` keeps working as images go by.
+
+> Press `I` first to hide the metadata panel (and `B` before opening, to hide the folder tree) for a clean full-screen show.
+
+### Hiding the panels
+
+Both side panels get out of the way when you want the screen for the images:
+
+- **Folder tree** — the **‹ Hide** button at its top, or the `B` key. A thin strip stays on the left; click it to bring the tree back.
+- **Metadata panel** — the **ℹ Info** button in the lightbox top bar, or the `I` key.
+
+Both remember their state across sessions.
+
+### Where you left off
+
+The grid remembers its scroll position and restores it when you come back — per view, so changing folder, search or filters starts at the top as you'd expect, while returning to a view you were reading puts you back in place. If the saved spot is deep into the library, imgmgr pulls the pages needed to reach it (bounded, so a stale position can't page through everything).
 
 ### Find similar images
 

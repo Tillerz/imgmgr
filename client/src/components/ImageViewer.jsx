@@ -330,7 +330,10 @@ function MetaPanel({ imageId, image }) {
   );
 }
 
-export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, onFavoriteChange, onDelete, onLoadMore, hasMore, total, onFindSimilar }) {
+export default function ImageViewer({
+  imageId, imageIds, onClose, onNavigate, onFavoriteChange, onDelete, onLoadMore, hasMore, total, onFindSimilar,
+  slideshowRunning = false, slidePaused = false, onTogglePause, onStopSlideshow,
+}) {
   const [zoom, setZoom] = useState(false);
   const [flash, setFlash] = useState('');
   const imgRef = useRef(null);
@@ -339,6 +342,11 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
     queryKey: ['image', imageId],
     queryFn: () => api.image(imageId),
   });
+
+  // Metadata panel: collapsible (for full-screen viewing) and resizable. Both
+  // persist across images and sessions. Declared before the key handler below,
+  // which toggles it.
+  const [panelOpen, setPanelOpen] = usePersistentState('imgmgr.metaPanelOpen', true);
 
   const currentIdx = imageIds.indexOf(imageId);
   const canPrev = currentIdx > 0;
@@ -382,14 +390,22 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
       if ((e.key === 'f' || e.key === 'F') && image) {
         onFavoriteChange(image.id, image.favorite === 5 ? 0 : 5); // toggle 5★
       }
+      if (e.key === 'i' || e.key === 'I') {
+        setPanelOpen(v => !v);
+      }
+      if ((e.key === 'p' || e.key === 'P') && slideshowRunning) {
+        onTogglePause?.();
+      }
       if (e.key === ' ') {
         e.preventDefault(); // don't scroll the page
-        nav(1);
+        // During a slideshow, Space is the familiar play/pause rather than "next".
+        if (slideshowRunning) onTogglePause?.();
+        else nav(1);
       }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose, nav, image, onFavoriteChange, attemptDelete]);
+  }, [onClose, nav, image, onFavoriteChange, attemptDelete, slideshowRunning, onTogglePause, setPanelOpen]);
 
   // Prevent body scroll while viewer is open
   useEffect(() => {
@@ -397,7 +413,6 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
     return () => { document.body.style.overflow = ''; };
   }, []);
 
-  // Resizable metadata panel — width persists across images/sessions.
   const [panelWidth, setPanelWidth] = usePersistentState('imgmgr.metaPanelWidth', 320);
   const panelRef = useRef(null);
   const startResize = useCallback((e) => {
@@ -430,7 +445,21 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
             <button className="btn-icon" onClick={() => nav(1)} disabled={!canNext}>›</button>
           </div>
           <div className="viewer-topbar-right">
-            {image && onFindSimilar && (
+            {slideshowRunning && (
+              <span className="viewer-slideshow-controls">
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={onTogglePause}
+                  title={slidePaused ? 'Resume (P)' : 'Pause (P)'}
+                >
+                  {slidePaused ? '▶ Resume' : '⏸ Pause'}
+                </button>
+                <button className="btn btn-danger btn-sm" onClick={onStopSlideshow} title="Stop the slideshow">
+                  ■ Stop
+                </button>
+              </span>
+            )}
+            {image && onFindSimilar && !slideshowRunning && (
               <button
                 className="btn btn-secondary btn-sm"
                 onClick={() => onFindSimilar(image.id)}
@@ -442,6 +471,13 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
             {image && (
               <StarRating value={image.favorite} onChange={v => onFavoriteChange(image.id, v)} size="lg" />
             )}
+            <button
+              className={`btn btn-secondary btn-sm ${panelOpen ? 'active' : ''}`}
+              onClick={() => setPanelOpen(v => !v)}
+              title={panelOpen ? 'Hide the info panel (I)' : 'Show the info panel (I)'}
+            >
+              {panelOpen ? 'ℹ Hide info' : 'ℹ Info'}
+            </button>
             <button className="btn-icon btn-close" onClick={onClose} title="Close (Esc)">✕</button>
           </div>
         </div>
@@ -475,10 +511,14 @@ export default function ImageViewer({ imageId, imageIds, onClose, onNavigate, on
             )}
           </div>
 
-          <div className="meta-resizer" onPointerDown={startResize} title="Drag to resize" />
-          <div className="meta-panel-wrap" ref={panelRef} style={{ width: `${panelWidth}px` }}>
-            <MetaPanel imageId={imageId} image={image} />
-          </div>
+          {panelOpen && (
+            <>
+              <div className="meta-resizer" onPointerDown={startResize} title="Drag to resize" />
+              <div className="meta-panel-wrap" ref={panelRef} style={{ width: `${panelWidth}px` }}>
+                <MetaPanel imageId={imageId} image={image} />
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

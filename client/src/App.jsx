@@ -28,7 +28,32 @@ export default function App() {
   const [similarThreshold, setSimilarThreshold] = usePersistentState('imgmgr.similarThreshold', 14); // max hash distance for "similar"
   const [captioning, setCaptioning] = useState(null); // { done, total } while bulk-captioning
   const [missingFilter, setMissingFilter] = useState(''); // '' = all, '1' = only offline files
+  const [captionFilter, setCaptionFilter] = useState(''); // '' = all, '1' = captioned, '0' = not
+  const [favoriteExact, setFavoriteExact] = usePersistentState('imgmgr.favoriteExact', false);
+  const [sidebarOpen, setSidebarOpen] = usePersistentState('imgmgr.sidebarOpen', true);
+  // Slideshow. `scope`/`speed` are remembered; `slideshowIds` is the full id list
+  // being played and doubles as the running flag (null = stopped). The list is
+  // fetched complete up front so playback can wrap from the last image to the
+  // first without waiting on pagination.
+  const [slideScope, setSlideScope] = usePersistentState('imgmgr.slideScope', 'folder');
+  const [slideSpeed, setSlideSpeed] = usePersistentState('imgmgr.slideSpeed', 5);
+  const [slideshowIds, setSlideshowIds] = useState(null);
+  const [slidePaused, setSlidePaused] = useState(false);
   const lastClickedId = useRef(null);
+
+  // `B` toggles the folder sidebar. Ignored while typing, and while the lightbox
+  // is open (it has its own shortcuts and its own panel toggle).
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'b' && e.key !== 'B') return;
+      if (viewerId != null) return;
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+      setSidebarOpen(v => !v);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewerId, setSidebarOpen]);
 
   // SSE: listen for server-pushed change notifications
   useEffect(() => {
@@ -69,9 +94,12 @@ export default function App() {
         const params = trashView
           ? { trashed: 1, limit: PAGE, offset: off }
           : {
-              folder: currentFolder, sort, favorite_min: favoriteMin, search, tag: tagFilter,
+              folder: currentFolder, sort, search, tag: tagFilter,
               facets: JSON.stringify(facets), limit: PAGE, offset: off,
+              // Exact mode pins one rating; otherwise it's "this many stars and up".
+              ...(favoriteExact ? { favorite_eq: favoriteMin } : { favorite_min: favoriteMin }),
               ...(missingFilter ? { missing: missingFilter } : {}),
+              ...(captionFilter ? { caption: captionFilter } : {}),
             };
         if (snapshotRef.current != null) params.max_id = snapshotRef.current;
         data = await api.images(params);
@@ -95,7 +123,7 @@ export default function App() {
     } finally {
       if (myReq === reqIdRef.current) loadingRef.current = false;
     }
-  }, [currentFolder, sort, favoriteMin, search, tagFilter, trashView, facets, similarTo, similarThreshold, missingFilter]);
+  }, [currentFolder, sort, favoriteMin, favoriteExact, search, tagFilter, trashView, facets, similarTo, similarThreshold, missingFilter, captionFilter]);
 
   // Initial load and on filter change
   React.useEffect(() => {
@@ -185,6 +213,57 @@ export default function App() {
     fetchPage(0);
     alert(`Removed ${r.purged} entr${r.purged === 1 ? 'y' : 'ies'} and ${r.thumbnails} cached thumbnail(s).`);
   }, [qc, fetchPage]);
+
+  // The active filters, in the shape /api/images/ids expects. Used by both
+  // "select all" and the slideshow so they always match what the grid shows.
+  const currentFilterParams = useCallback(() => ({
+    folder: currentFolder, search, tag: tagFilter, facets: JSON.stringify(facets),
+    ...(favoriteExact ? { favorite_eq: favoriteMin } : { favorite_min: favoriteMin }),
+    ...(missingFilter ? { missing: missingFilter } : {}),
+    ...(captionFilter ? { caption: captionFilter } : {}),
+  }), [currentFolder, search, tagFilter, facets, favoriteExact, favoriteMin, missingFilter, captionFilter]);
+
+  // Start the slideshow.
+  //   'all'      — the whole library, ignoring every filter
+  //   'folder'   — exactly what the grid is showing
+  //   'selected' — only the ticked images, in grid order
+  // Playback begins at the open image, else the first selected tile, else the
+  // first image in the list.
+  const startSlideshow = useCallback(async () => {
+    let ids;
+    if (slideScope === 'selected') {
+      if (!selectedIds.size) { window.alert('No images are selected.'); return; }
+      // Prefer grid order; selections made via "All" can include unloaded rows,
+      // so anything not on screen is appended afterwards.
+      const onScreen = images.map(i => i.id).filter(id => selectedIds.has(id));
+      const rest = [...selectedIds].filter(id => !onScreen.includes(id));
+      ids = [...onScreen, ...rest];
+    } else {
+      ids = await api.imageIds(slideScope === 'all' ? {} : currentFilterParams());
+    }
+    if (!ids.length) { window.alert('Nothing to show here.'); return; }
+    const preferred = viewerId ?? [...selectedIds][0];
+    setSlideshowIds(ids);
+    setSlidePaused(false);
+    setViewerId(ids.includes(preferred) ? preferred : ids[0]);
+  }, [slideScope, selectedIds, images, currentFilterParams, viewerId]);
+
+  const stopSlideshow = useCallback(() => {
+    setSlideshowIds(null);
+    setSlidePaused(false);
+  }, []);
+
+  // Advance on a timer, wrapping past the last image back to the first.
+  useEffect(() => {
+    if (!slideshowIds?.length || slidePaused) return;
+    const t = setInterval(() => {
+      setViewerId(cur => {
+        const i = slideshowIds.indexOf(cur);
+        return slideshowIds[(i + 1) % slideshowIds.length]; // -1 + 1 = 0 → first
+      });
+    }, Math.max(1, slideSpeed) * 1000);
+    return () => clearInterval(t);
+  }, [slideshowIds, slideSpeed, slidePaused]);
 
   // Show images visually similar to the given one (from the lightbox).
   const showSimilar = useCallback((id) => {
@@ -329,12 +408,29 @@ export default function App() {
         </header>
 
         <div className="app-body">
-          <aside className="sidebar">
-            <FolderTree
-              currentFolder={currentFolder}
-              onNavigate={f => { setCurrentFolder(f); setSelectedIds(new Set()); }}
-            />
-          </aside>
+          {sidebarOpen ? (
+            <aside className="sidebar">
+              <button
+                className="sidebar-toggle"
+                onClick={() => setSidebarOpen(false)}
+                title="Hide the folder list (B)"
+              >
+                ‹ Hide
+              </button>
+              <FolderTree
+                currentFolder={currentFolder}
+                onNavigate={f => { setCurrentFolder(f); setSelectedIds(new Set()); }}
+              />
+            </aside>
+          ) : (
+            <button
+              className="sidebar-reopen"
+              onClick={() => setSidebarOpen(true)}
+              title="Show the folder list (B)"
+            >
+              ›
+            </button>
+          )}
 
           <main className="main-content">
             {trashView ? (
@@ -398,18 +494,15 @@ export default function App() {
                 missingFilter={missingFilter}
                 onMissingFilter={setMissingFilter}
                 onPurgeMissing={handlePurgeMissing}
+                captionFilter={captionFilter}
+                onCaptionFilter={setCaptionFilter}
+                favoriteExact={favoriteExact}
+                onFavoriteExact={setFavoriteExact}
                 onBulkRate={handleBulkRate}
                 onCaptionSelected={handleCaptionSelected}
                 captioning={captioning}
                 onSelectAll={async () => {
-                  const ids = await api.imageIds({
-                    folder: currentFolder,
-                    favorite_min: favoriteMin,
-                    search,
-                    tag: tagFilter,
-                    facets: JSON.stringify(facets),
-                  });
-                  setSelectedIds(new Set(ids));
+                  setSelectedIds(new Set(await api.imageIds(currentFilterParams())));
                 }}
                 onDeselectAll={() => setSelectedIds(new Set())}
                 onMoveSelected={() => {/* prompt handled in toolbar */}}
@@ -419,6 +512,13 @@ export default function App() {
                 onBulkTag={handleBulkTag}
                 hasNewImages={hasNewImages}
                 onRefreshNew={() => { setHasNewImages(false); fetchPage(0); }}
+                slideScope={slideScope}
+                onSlideScope={setSlideScope}
+                slideSpeed={slideSpeed}
+                onSlideSpeed={setSlideSpeed}
+                slideshowRunning={!!slideshowIds}
+                onStartSlideshow={startSlideshow}
+                onStopSlideshow={stopSlideshow}
               />
             )}
             <TileGrid
@@ -429,6 +529,10 @@ export default function App() {
               onFavoriteChange={handleFavoriteChange}
               onLoadMore={loadMore}
               hasMore={images.length < total}
+              viewKey={JSON.stringify([
+                currentFolder, sort, favoriteMin, favoriteExact, search, tagFilter,
+                facets, trashView, similarTo, missingFilter, captionFilter,
+              ])}
             />
           </main>
         </div>
@@ -437,15 +541,21 @@ export default function App() {
       {viewerId != null && (
         <ImageViewer
           imageId={viewerId}
-          imageIds={viewerImages}
-          onClose={() => setViewerId(null)}
+          // While playing, navigate the complete slideshow list rather than the
+          // paginated grid, so the counter and wrap-around are correct.
+          imageIds={slideshowIds || viewerImages}
+          onClose={() => { stopSlideshow(); setViewerId(null); }}
           onNavigate={setViewerId}
           onFavoriteChange={handleFavoriteChange}
           onDelete={handleViewerDelete}
-          onLoadMore={loadMore}
-          hasMore={images.length < total}
-          total={total}
+          onLoadMore={slideshowIds ? undefined : loadMore}
+          hasMore={slideshowIds ? false : images.length < total}
+          total={slideshowIds ? slideshowIds.length : total}
           onFindSimilar={showSimilar}
+          slideshowRunning={!!slideshowIds}
+          slidePaused={slidePaused}
+          onTogglePause={() => setSlidePaused(p => !p)}
+          onStopSlideshow={stopSlideshow}
         />
       )}
 
