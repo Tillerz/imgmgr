@@ -31,6 +31,10 @@ export default function App() {
   const [captionFilter, setCaptionFilter] = useState(''); // '' = all, '1' = captioned, '0' = not
   const [favoriteExact, setFavoriteExact] = usePersistentState('imgmgr.favoriteExact', false);
   const [sidebarOpen, setSidebarOpen] = usePersistentState('imgmgr.sidebarOpen', true);
+  // '' = the original stylesheet; any other value selects a theme override,
+  // applied as html[data-theme=…]. index.html reads the same key before first
+  // paint so a reload doesn't flash the default theme.
+  const [theme, setTheme] = usePersistentState('imgmgr.theme', '');
   // Slideshow. `scope`/`speed` are remembered; `slideshowIds` is the full id list
   // being played and doubles as the running flag (null = stopped). The list is
   // fetched complete up front so playback can wrap from the last image to the
@@ -40,6 +44,11 @@ export default function App() {
   const [slideshowIds, setSlideshowIds] = useState(null);
   const [slidePaused, setSlidePaused] = useState(false);
   const lastClickedId = useRef(null);
+
+  useEffect(() => {
+    if (theme) document.documentElement.dataset.theme = theme;
+    else delete document.documentElement.dataset.theme;
+  }, [theme]);
 
   // `B` toggles the folder sidebar. Ignored while typing, and while the lightbox
   // is open (it has its own shortcuts and its own panel toggle).
@@ -405,6 +414,15 @@ export default function App() {
           >
             {trashView ? '← Back to images' : '🗑 Trash'}
           </button>
+          <select
+            className="select-sm theme-picker"
+            value={theme}
+            onChange={e => setTheme(e.target.value)}
+            title="Switch the visual style"
+          >
+            <option value="">Theme: Classic</option>
+            <option value="modern">Theme: Modern</option>
+          </select>
         </header>
 
         <div className="app-body">

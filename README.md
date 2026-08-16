@@ -216,6 +216,19 @@ While it runs: **⏸ Pause** / **■ Stop** sit in the lightbox top bar, `P` or 
 
 > Press `I` first to hide the metadata panel (and `B` before opening, to hide the folder tree) for a clean full-screen show.
 
+### Themes
+
+The **Theme** picker at the right of the header switches the visual style. Your choice is remembered, and applied before first paint so a reload doesn't flash the other theme.
+
+| Theme | Look |
+| --- | --- |
+| **Classic** | The original dark UI — compact, 6px radii, solid panels |
+| **Modern** | Hypermodern dark: near-black `#080808`, hairline translucent borders instead of shadows, radial backlighting, fluid type, and lift-on-hover micro-interactions |
+
+Themes are plain CSS. `client/style.css` holds the base and Classic; `client/theme-modern.css` layers Modern on top, scoped entirely to `html[data-theme="modern"]`, so it has no effect until selected. To add your own, copy the modern file, scope it to a new `data-theme` value, and add an `<option>` to the picker in `App.jsx`.
+
+The Modern theme honours `prefers-reduced-motion` — the lift and scale effects are dropped if your system asks for less animation.
+
 ### Hiding the panels
 
 Both side panels get out of the way when you want the screen for the images:

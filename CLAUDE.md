@@ -34,6 +34,9 @@ server/           Express API + all domain logic
   watcher.js      chokidar on today's dated folder (opt-in)
   events.js       SSE client registry + broadcast
   routes/         images.js (the big one), folders.js, duplicates.js, tags.js
+client/
+  style.css       base + "Classic" theme (the tokens live in `:root`)
+  theme-modern.css  "Modern" theme, entirely scoped to html[data-theme="modern"]
 client/src/
   main.jsx        React root + QueryClient
   App.jsx         all app state, pagination, bulk actions

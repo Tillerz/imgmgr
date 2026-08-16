@@ -936,6 +936,9 @@ html, body, #root {
   font-variant-numeric: tabular-nums; color: var(--text);
 }
 
+/* Theme picker sits at the far right of the header. */
+.theme-picker { margin-left: auto; }
+
 /* --- Collapsible folder sidebar ----------------------------- */
 .sidebar-toggle {
   display: block; width: 100%;

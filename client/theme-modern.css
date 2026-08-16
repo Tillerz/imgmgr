@@ -1,0 +1,488 @@
+/* ============================================================
+   imgmgr — "Modern" theme
+   ------------------------------------------------------------
+   Hypermodern dark aesthetic (Linear / Vercel / Apple):
+   deep neutral black, hairline translucent borders instead of
+   drop shadows, radial backlighting behind key surfaces, fluid
+   type with contrasty tracking, and snappy transform-based
+   micro-interactions.
+
+   Everything is scoped to html[data-theme="modern"], so this
+   file is inert until the theme picker selects it. It overrides
+   the tokens in style.css first, then restyles the surfaces
+   whose look is structural rather than tokenised.
+   ============================================================ */
+
+html[data-theme="modern"] {
+  /* --- Palette ---------------------------------------------- */
+  --bg-primary:      #080808;   /* deep neutral black */
+  --bg-secondary:    #0c0c0d;
+  --bg-tertiary:     #131315;
+  --bg-hover:        #1a1a1d;
+  --bg-active:       #17203a;
+  --text-primary:    #ffffff;   /* pure white body text */
+  --text-secondary:  #a1a1aa;   /* muted slate */
+  --text-muted:      #6b7280;   /* dimmer slate */
+  --accent:          #5b7cfa;
+  --accent-hover:    #8ba3ff;
+  --danger:          #f0546a;
+  --danger-hover:    #ff7286;
+  --success:         #3ddc97;
+  --star-on:         #ffc857;
+  --star-off:        #2a2a2e;
+  --selected-bg:     rgba(91, 124, 250, 0.16);
+  --selected-border: #5b7cfa;
+  --drop-over:       rgba(91, 124, 250, 0.28);
+
+  /* Hairline borders carry the depth here, not shadows. */
+  --border:          rgba(255, 255, 255, 0.07);
+  --border-light:    rgba(255, 255, 255, 0.10);
+  --hairline:        rgba(255, 255, 255, 0.05);
+  --shadow-sm:       0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg:       0 24px 64px rgba(0, 0, 0, 0.66);
+
+  --radius:          14px;
+  --radius-sm:       10px;
+  --radius-lg:       16px;
+
+  /* Premium, snappy easing + a slower one for larger surfaces. */
+  --ease:            cubic-bezier(0.16, 1, 0.3, 1);
+  --dur:             180ms;
+  --dur-slow:        320ms;
+
+  --font-sans: 'Inter', 'Geist', 'SF Pro Display', -apple-system,
+               BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  color-scheme: dark;
+}
+
+/* --- Base --------------------------------------------------- */
+html[data-theme="modern"] body,
+html[data-theme="modern"] #root {
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  /* Fluid base size. */
+  font-size: clamp(13px, 0.30vw + 12.2px, 15px);
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Ambient backlighting behind the whole shell. Painted on body::after so the
+   app's own stacking (the header's z-index, the lightbox at 1000) is left
+   exactly as it was; #root simply sits one layer above the glow.
+   Fixed and non-interactive, so it never intercepts clicks or scrolls. */
+html[data-theme="modern"] body::after {
+  content: '';
+  position: fixed;
+  inset: -20% -10% auto -10%;
+  height: 70vh;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(60% 55% at 22% 0%, rgba(91, 124, 250, 0.10), transparent 70%),
+    radial-gradient(45% 45% at 82% 8%, rgba(160, 91, 250, 0.07), transparent 72%);
+}
+html[data-theme="modern"] #root { position: relative; z-index: 1; }
+
+/* --- Header ------------------------------------------------- */
+html[data-theme="modern"] .app-header {
+  background: rgba(10, 10, 11, 0.72);
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  border-bottom: 1px solid var(--hairline);
+  padding: 10px 18px;
+}
+html[data-theme="modern"] .app-title {
+  font-weight: 600;
+  font-size: clamp(15px, 0.5vw + 13px, 18px);
+  letter-spacing: -0.03em;   /* tight tracking on the large label */
+  background: linear-gradient(180deg, #fff 40%, #9ca3af);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* --- Controls ----------------------------------------------- */
+html[data-theme="modern"] .btn,
+html[data-theme="modern"] .btn-icon,
+html[data-theme="modern"] .star-filter-btn,
+html[data-theme="modern"] .star-mode-btn,
+html[data-theme="modern"] .unrated-count,
+html[data-theme="modern"] .select-sm,
+html[data-theme="modern"] .search-input,
+html[data-theme="modern"] .input-sm,
+html[data-theme="modern"] .tag-input {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.026);
+  color: var(--text-primary);
+  transition:
+    background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease),
+    color var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+  will-change: transform;
+}
+html[data-theme="modern"] .btn:hover:not(:disabled),
+html[data-theme="modern"] .btn-icon:hover:not(:disabled),
+html[data-theme="modern"] .star-filter-btn:hover,
+html[data-theme="modern"] .star-mode-btn:hover,
+html[data-theme="modern"] .unrated-count:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-light);
+  transform: translateY(-1px);       /* hardware-accelerated lift */
+}
+html[data-theme="modern"] .btn:active:not(:disabled),
+html[data-theme="modern"] .btn-icon:active:not(:disabled) {
+  transform: translateY(0) scale(0.985);
+  transition-duration: 80ms;
+}
+html[data-theme="modern"] .btn:disabled { opacity: 0.4; transform: none; }
+
+html[data-theme="modern"] .btn-primary,
+html[data-theme="modern"] .star-filter-btn.active,
+html[data-theme="modern"] .unrated-count.active {
+  background: linear-gradient(180deg, #6b89ff, #4e6ef0);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+html[data-theme="modern"] .btn-primary:hover:not(:disabled) {
+  background: linear-gradient(180deg, #7d98ff, #5c7bf5);
+}
+html[data-theme="modern"] .btn-danger {
+  background: linear-gradient(180deg, #f2596e, #dc3f57);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+html[data-theme="modern"] .btn-danger:hover:not(:disabled) {
+  background: linear-gradient(180deg, #ff6c80, #ea4f66);
+}
+
+/* Native <select> popups are drawn by the OS, which ignores the translucent
+   background above and composites the option list against a light default —
+   giving unreadable white-on-light-grey. Both the control and its options need
+   an explicitly opaque dark background: browsers differ on which one they use
+   to paint the popup, so set it in both places. */
+html[data-theme="modern"] select,
+html[data-theme="modern"] .select-sm {
+  background-color: #131315;
+  color: var(--text-primary);
+}
+html[data-theme="modern"] select option,
+html[data-theme="modern"] select optgroup {
+  background-color: #131315;
+  color: #ffffff;
+}
+html[data-theme="modern"] select option:disabled { color: var(--text-muted); }
+html[data-theme="modern"] select option:checked {
+  background-color: #23324f;
+  color: #ffffff;
+}
+
+html[data-theme="modern"] .search-input:focus,
+html[data-theme="modern"] .tag-input:focus,
+html[data-theme="modern"] .input-sm:focus {
+  outline: none;
+  border-color: rgba(91, 124, 250, 0.55);
+  background: rgba(91, 124, 250, 0.07);
+  box-shadow: 0 0 0 3px rgba(91, 124, 250, 0.13);
+}
+/* Selects get the same focus ring, but keep an opaque background — a
+   translucent one here would reset the popup to unreadable while it is open. */
+html[data-theme="modern"] select:focus,
+html[data-theme="modern"] .select-sm:focus {
+  outline: none;
+  border-color: rgba(91, 124, 250, 0.55);
+  background-color: #17171b;
+  box-shadow: 0 0 0 3px rgba(91, 124, 250, 0.13);
+}
+
+/* Uppercase micro-labels get wide tracking, per the type spec. */
+html[data-theme="modern"] .filter-label,
+html[data-theme="modern"] .dup-type-badge,
+html[data-theme="modern"] .tile-missing-badge,
+html[data-theme="modern"] .end-label,
+html[data-theme="modern"] .dup-actions-label {
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* --- Bento surfaces ----------------------------------------- */
+/* Sidebar, toolbar and panels read as inset cards with hairline
+   edges and their own faint backlight, rather than flat regions. */
+html[data-theme="modern"] .sidebar {
+  background: linear-gradient(180deg, rgba(255,255,255,0.022), transparent 40%), var(--bg-secondary);
+  border-right: 1px solid var(--hairline);
+}
+html[data-theme="modern"] .sidebar-reopen {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--hairline);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+html[data-theme="modern"] .folder-tree-header {
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+html[data-theme="modern"] .folder-name {
+  border-radius: var(--radius-sm);
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+
+html[data-theme="modern"] .toolbar {
+  background: rgba(255, 255, 255, 0.018);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  margin: 10px 12px 0;
+  padding: 10px 12px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+html[data-theme="modern"] .toolbar-row { gap: 8px; }
+
+/* --- Tile grid ---------------------------------------------- */
+/* NOTE: cell size stays uniform. The grid is virtualised on a single
+   row height (see TileGrid.jsx), so spanning cells would corrupt the
+   scroll math at 98k images. The bento character comes from the card
+   treatment, spacing and depth instead. */
+html[data-theme="modern"] .tile-grid { gap: 14px; }
+html[data-theme="modern"] .tile-grid-wrap { padding: 4px 4px 24px; }
+
+html[data-theme="modern"] .tile {
+  background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.014));
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition:
+    transform var(--dur-slow) var(--ease),
+    border-color var(--dur-slow) var(--ease),
+    background var(--dur-slow) var(--ease);
+  will-change: transform;
+}
+html[data-theme="modern"] .tile:hover {
+  transform: translateY(-4px) scale(1.012);
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.02));
+}
+html[data-theme="modern"] .tile.selected {
+  border-color: var(--selected-border);
+  background: var(--selected-bg);
+}
+html[data-theme="modern"] .tile-img-wrap {
+  border-radius: calc(var(--radius-lg) - 5px);
+  margin: 5px 5px 0;
+  width: auto;
+  background: #050505;
+}
+html[data-theme="modern"] .tile-img-wrap img {
+  transition: transform var(--dur-slow) var(--ease);
+}
+html[data-theme="modern"] .tile:hover .tile-img-wrap img { transform: scale(1.05); }
+html[data-theme="modern"] .tile-info { padding: 9px 11px 11px; }
+html[data-theme="modern"] .tile-filename {
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  color: var(--text-primary);
+}
+html[data-theme="modern"] .tile-date { color: var(--text-muted); font-size: 11px; }
+
+html[data-theme="modern"] .tile-select-btn,
+html[data-theme="modern"] .tile-copy-btn {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 8, 8, 0.62);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+html[data-theme="modern"] .tile-select-btn:hover,
+html[data-theme="modern"] .tile-copy-btn:hover {
+  transform: scale(1.1);
+  background: rgba(20, 20, 22, 0.85);
+}
+html[data-theme="modern"] .tile-missing-badge {
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* --- Lightbox ----------------------------------------------- */
+html[data-theme="modern"] .viewer-backdrop {
+  background: rgba(4, 4, 5, 0.82);
+  backdrop-filter: blur(22px) saturate(130%);
+  -webkit-backdrop-filter: blur(22px) saturate(130%);
+}
+html[data-theme="modern"] .viewer-container {
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  overflow: hidden;
+}
+/* Backlight behind the image stage. */
+html[data-theme="modern"] .viewer-image-area {
+  background:
+    radial-gradient(52% 48% at 50% 46%, rgba(91, 124, 250, 0.11), transparent 72%),
+    #050506;
+}
+html[data-theme="modern"] .viewer-img { border-radius: 10px; }
+html[data-theme="modern"] .viewer-topbar {
+  background: rgba(10, 10, 11, 0.7);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--hairline);
+}
+html[data-theme="modern"] .viewer-counter {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+}
+
+/* --- Metadata panel: the one true bento region --------------- */
+/* Not virtualised, so cards here can genuinely vary in size. */
+html[data-theme="modern"] .meta-panel {
+  background: var(--bg-secondary);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-content: start;
+  padding: 12px;
+}
+html[data-theme="modern"] .meta-section {
+  grid-column: span 2;                 /* default: full width */
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.012));
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 13px;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+html[data-theme="modern"] .meta-section:hover {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+}
+/* The file-info card gets the backlight — it's the anchor of the panel. */
+html[data-theme="modern"] .meta-section:first-child {
+  background:
+    radial-gradient(85% 120% at 0% 0%, rgba(91, 124, 250, 0.14), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.014));
+}
+html[data-theme="modern"] .meta-section-title {
+  text-transform: uppercase;
+  letter-spacing: 0.12em;              /* wide tracking on small labels */
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+html[data-theme="modern"] .meta-filename {
+  font-size: clamp(14px, 0.4vw + 12.5px, 16px);
+  font-weight: 600;
+  letter-spacing: -0.022em;            /* tight tracking on the big line */
+  color: #fff;
+}
+html[data-theme="modern"] .meta-key { color: var(--text-muted); }
+html[data-theme="modern"] .meta-value { color: var(--text-primary); }
+html[data-theme="modern"] .meta-prompt {
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  padding: 9px 10px;
+}
+html[data-theme="modern"] .tag-chip {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  transition: background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+html[data-theme="modern"] .tag-chip:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+/* --- Duplicate panel: irregular bento cards ------------------ */
+html[data-theme="modern"] .dup-panel {
+  background: var(--bg-secondary);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-lg);
+}
+html[data-theme="modern"] .dup-panel-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-auto-flow: dense;
+  gap: 12px;
+  padding: 12px;
+}
+html[data-theme="modern"] .dup-group {
+  background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.012));
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px;
+  transition: transform var(--dur-slow) var(--ease), border-color var(--dur-slow) var(--ease);
+}
+html[data-theme="modern"] .dup-group:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+/* Irregular sizing: bigger groups claim more of the grid. */
+html[data-theme="modern"] .dup-group:has(.dup-tile:nth-child(3)) { grid-column: span 2; }
+html[data-theme="modern"] .dup-group:has(.dup-tile:nth-child(6)) { grid-row: span 2; }
+html[data-theme="modern"] .dup-type-badge {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 2px 9px;
+}
+html[data-theme="modern"] .dup-tile {
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+html[data-theme="modern"] .dup-tile:hover { transform: scale(1.03); border-color: rgba(255,255,255,0.18); }
+
+/* --- Banners, toasts, misc ---------------------------------- */
+html[data-theme="modern"] .undo-toast,
+html[data-theme="modern"] .new-images-banner,
+html[data-theme="modern"] .offline-banner {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: rgba(18, 18, 20, 0.86);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+html[data-theme="modern"] .undo-toast { box-shadow: var(--shadow-lg); }
+html[data-theme="modern"] .new-images-banner {
+  background: linear-gradient(90deg, rgba(91,124,250,0.16), rgba(91,124,250,0.05));
+  transition: background var(--dur) var(--ease);
+}
+html[data-theme="modern"] .new-images-banner:hover {
+  background: linear-gradient(90deg, rgba(91,124,250,0.24), rgba(91,124,250,0.09));
+}
+html[data-theme="modern"] .empty-state,
+html[data-theme="modern"] .loading-msg {
+  color: var(--text-muted);
+  letter-spacing: -0.01em;
+}
+html[data-theme="modern"] .meta-resizer { transition: background var(--dur) var(--ease); }
+html[data-theme="modern"] .meta-resizer:hover { background: rgba(91, 124, 250, 0.5); }
+
+/* Range inputs (speed / similarity sliders). */
+html[data-theme="modern"] input[type="range"] { accent-color: var(--accent); }
+
+/* --- Reduced motion ----------------------------------------- */
+/* The lift/scale effects are decorative; drop them when asked. */
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme="modern"] *,
+  html[data-theme="modern"] *::before,
+  html[data-theme="modern"] *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+  html[data-theme="modern"] .tile:hover,
+  html[data-theme="modern"] .dup-group:hover,
+  html[data-theme="modern"] .btn:hover:not(:disabled) { transform: none; }
+}
